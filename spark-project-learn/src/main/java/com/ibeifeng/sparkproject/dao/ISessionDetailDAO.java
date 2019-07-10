@@ -1,5 +1,7 @@
 package com.ibeifeng.sparkproject.dao;
 
+import java.util.List;
+
 import com.ibeifeng.sparkproject.domain.SessionDetail;
 
 /**
@@ -14,5 +16,11 @@ public interface ISessionDetailDAO {
 	 * @param sessionDetail 
 	 */
 	void insert(SessionDetail sessionDetail);
+	
+	/**
+	 * 批量插入session明细数据
+	 * @param sessionDetails
+	 */
+	void insertBatch(List<SessionDetail> sessionDetails);
 	
 }

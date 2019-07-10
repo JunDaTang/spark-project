@@ -10,7 +10,7 @@ Target Server Type    : MYSQL
 Target Server Version : 50711
 File Encoding         : 65001
 
-Date: 2019-07-10 14:32:30
+Date: 2019-07-10 16:37:23
 */
 
 SET FOREIGN_KEY_CHECKS=0;
@@ -34,5 +34,5 @@ CREATE TABLE `task` (
 -- ----------------------------
 -- Records of task
 -- ----------------------------
-INSERT INTO `task` VALUES ('1', 'test', '2019-07-07', '2019-07-07', '2019-07-09', '', null, null);
-INSERT INTO `task` VALUES ('2', 'test_task', '2019-07-07', '2019-07-07', '2019-07-09', null, null, '{\"startAge\":[\"10\"], \"endAge\":[\"10\"],\"startDate\":[\"2019-07-10\"],\"endDate\":[\"2019-07-10\"]}');
+INSERT INTO `task` VALUES ('1', 'test', '2019-07-07', '2019-07-07', '2019-07-10', '', null, null);
+INSERT INTO `task` VALUES ('2', 'test_task', '2019-07-07', '2019-07-07', '2019-07-10', null, null, '{\"startAge\":[\"10\"], \"endAge\":[\"10\"],\"startDate\":[\"2019-07-10\"],\"endDate\":[\"2019-07-10\"]}');
