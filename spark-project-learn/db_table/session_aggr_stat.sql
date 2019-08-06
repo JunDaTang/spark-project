@@ -10,7 +10,7 @@ Target Server Type    : MYSQL
 Target Server Version : 50711
 File Encoding         : 65001
 
-Date: 2019-08-06 08:53:33
+Date: 2019-08-06 09:22:08
 */
 
 SET FOREIGN_KEY_CHECKS=0;
@@ -43,4 +43,4 @@ CREATE TABLE `session_aggr_stat` (
 -- ----------------------------
 -- Records of session_aggr_stat
 -- ----------------------------
-INSERT INTO `session_aggr_stat` VALUES ('2', '819', '0', '0', '0', '0', '0', '0', '0', '0.08', '0.89', '0.09', '0.13', '0.2', '0.58', '0.01', '0');
+INSERT INTO `session_aggr_stat` VALUES ('2', '653', '0', '0', '0', '0', '0', '0', '0.01', '0.06', '0.89', '0.09', '0.15', '0.18', '0.57', '0', '0');
