@@ -90,7 +90,10 @@ public class UserVisitSessionAnalyzeSpark {
 		
 		// 生成模拟测试数据
 		mockData(sc, sqlContext);
+//		sqlContext.sql("select * from user_visit_action").write().json("C:\\Users\\flnet\\Desktop\\mockData.json");
 		
+//		sqlContext.read().json("C:\\Users\\tjd\\Desktop\\mockData.json").registerTempTable("user_visit_action");
+//		sqlContext.sql("select * from user_visit_action").show();
 		// 创建需要使用的DAO组件
 		ITaskDAO taskDAO = DAOFactory.getTaskDAO();
 		
@@ -99,10 +102,15 @@ public class UserVisitSessionAnalyzeSpark {
 		Task task = taskDAO.findById(taskid);
 		JSONObject taskParam = JSONObject.parseObject(task.getTaskParam());
 		
+		
+		System.out.println("taskParam.toJSONString():" + taskParam.toJSONString());
 		// 如果要进行session粒度的数据聚合
 		// 首先要从user_visit_action表中，查询出来指定日期范围内的行为数据
 		JavaRDD<Row> actionRDD = getActionRDDByDateRange(sqlContext, taskParam);
+		System.out.println("actionRDD.count():" + actionRDD.count());
+		
 		JavaPairRDD<String, Row> sessionid2actionRDD = getSessionid2ActionRDD(actionRDD);
+		System.out.println("sessionid2actionRDD.count():" + sessionid2actionRDD.count());
 		
 		// 首先，可以将行为数据，按照session_id进行groupByKey分组
 		// 此时的数据的粒度就是session粒度了，然后呢，可以将session粒度的数据
@@ -111,7 +119,7 @@ public class UserVisitSessionAnalyzeSpark {
 		// 到这里为止，获取的数据是<sessionid,(sessionid,searchKeywords,clickCategoryIds,age,professional,city,sex)>  
 		JavaPairRDD<String, String> sessionid2AggrInfoRDD = 
 				aggregateBySession(sqlContext, actionRDD);
-		
+		System.out.println("sessionid2AggrInfoRDD.count():" + sessionid2AggrInfoRDD.count());
 		// 接着，就要针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤
 		// 相当于我们自己编写的算子，是要访问外面的任务参数对象的
 		// 所以，大家记得我们之前说的，匿名内部类（算子函数），访问外部对象，是要给外部对象使用final修饰的
@@ -122,7 +130,7 @@ public class UserVisitSessionAnalyzeSpark {
 		
 		JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD = filterSessionAndAggrStat(
 				sessionid2AggrInfoRDD, taskParam, sessionAggrStatAccumulator);
-		
+		System.out.println("filteredSessionid2AggrInfoRDD.count():" + filteredSessionid2AggrInfoRDD.count());
 		/**
 		 * 对于Accumulator这种分布式累加计算的变量的使用，有一个重要说明
 		 * 
@@ -208,7 +216,6 @@ public class UserVisitSessionAnalyzeSpark {
 		
 		getTop10Category(task.getTaskid(), 
 				filteredSessionid2AggrInfoRDD, sessionid2actionRDD);
-		
 		// 关闭Spark上下文
 		sc.close(); 
 	}
@@ -643,6 +650,7 @@ public class UserVisitSessionAnalyzeSpark {
 		return filteredSessionid2AggrInfoRDD;
 	}
 	
+	
 	/**
 	 * 随机抽取session
 	 * @param sessionid2AggrInfoRDD  
@@ -652,9 +660,9 @@ public class UserVisitSessionAnalyzeSpark {
 			JavaPairRDD<String, String> sessionid2AggrInfoRDD,
 			JavaPairRDD<String, Row> sessionid2actionRDD) { 
 		
-		System.out.println("randomExtractSession.taskid:" + taskid);
-		System.out.println("randomExtractSession.sessionid2AggrInfoRDD:" + sessionid2AggrInfoRDD.collect());
-		System.out.println("randomExtractSession.sessionid2AggrInfoRDD:" + sessionid2AggrInfoRDD.collect());
+		//System.out.println("randomExtractSession.taskid:" + taskid);
+		//System.out.println("randomExtractSession.sessionid2AggrInfoRDD.count:" + sessionid2AggrInfoRDD.count());
+		//System.out.println("randomExtractSession.sessionid2AggrInfoRDD.count:" + sessionid2AggrInfoRDD.count());
 		
 		/**
 		 * 第一步，计算出每天每小时的session数量
@@ -988,9 +996,9 @@ public class UserVisitSessionAnalyzeSpark {
 		/**
 		 * 第一步：获取符合条件的session访问过的所有品类
 		 */
-		System.out.println("getTop10Category.taskid:" + taskid);
-		System.out.println("getTop10Category.filteredSessionid2AggrInfoRDD:" + filteredSessionid2AggrInfoRDD.collect());
-		System.out.println("getTop10Category.sessionid2actionRDD:" + sessionid2actionRDD.collect());
+//		System.out.println("getTop10Category.taskid:" + taskid);
+//		System.out.println("getTop10Category.filteredSessionid2AggrInfoRDD:" + filteredSessionid2AggrInfoRDD.collect());
+//		System.out.println("getTop10Category.sessionid2actionRDD:" + sessionid2actionRDD.collect());
 		// 获取符合条件的session的访问明细
 		JavaPairRDD<String, Row> sessionid2detailRDD = filteredSessionid2AggrInfoRDD
 				.join(sessionid2actionRDD)
@@ -1007,7 +1015,6 @@ public class UserVisitSessionAnalyzeSpark {
 				});
 		
 		
-		System.out.println("getTop10Category.sessionid2detailRDD:" + sessionid2detailRDD.collect());
 		// 获取session访问过的所有品类id
 		// 访问过：指的是，点击过、下单过、支付过的品类
 		JavaPairRDD<Long, Long> categoryidRDD = sessionid2detailRDD.flatMapToPair(
@@ -1050,7 +1057,6 @@ public class UserVisitSessionAnalyzeSpark {
 					}
 					
 				});
-		System.out.println("getTop10Category.categoryidRDD:" + categoryidRDD.collect());
 		/**
 		 * 第二步：计算各品类的点击、下单和支付的次数
 		 */
@@ -1069,9 +1075,6 @@ public class UserVisitSessionAnalyzeSpark {
 		JavaPairRDD<Long, Long> payCategoryId2CountRDD = 
 				getPayCategoryId2CountRDD(sessionid2detailRDD);
 		
-		System.out.println("getTop10Category.clickCategoryId2CountRDD:" + clickCategoryId2CountRDD.collect());
-		System.out.println("getTop10Category.orderCategoryId2CountRDD:" + orderCategoryId2CountRDD.collect());
-		System.out.println("getTop10Category.payCategoryId2CountRDD:" + payCategoryId2CountRDD.collect());
 		
 		/**
 		 * 第三步：join各品类与它的点击、下单和支付的次数
@@ -1090,7 +1093,6 @@ public class UserVisitSessionAnalyzeSpark {
 				categoryidRDD, clickCategoryId2CountRDD, orderCategoryId2CountRDD, 
 				payCategoryId2CountRDD);
 		
-		System.out.println("getTop10Category.categoryid2countRDD:" + categoryid2countRDD.collect());
 		/**
 		 * 第四步：自定义二次排序key
 		 */
@@ -1123,12 +1125,10 @@ public class UserVisitSessionAnalyzeSpark {
 					
 				});
 		
-		System.out.println("getTop10Category.sortKey2countRDD:" + sortKey2countRDD.collect());
 		JavaPairRDD<CategorySortKey, String> sortedCategoryCountRDD = 
 				sortKey2countRDD.sortByKey(false);
 		
 		
-		System.out.println("getTop10Category.sortedCategoryCountRDD:" + sortedCategoryCountRDD.collect());
 		/**
 		 * 第六步：用take(10)取出top10热门品类，并写入MySQL
 		 */
@@ -1137,7 +1137,6 @@ public class UserVisitSessionAnalyzeSpark {
 		List<Tuple2<CategorySortKey, String>> top10CategoryList = 
 				sortedCategoryCountRDD.take(10);
 		
-		System.out.println("getTop10Category.top10CategoryList:" + top10CategoryList);
 		for(Tuple2<CategorySortKey, String> tuple: top10CategoryList) {
 			String countInfo = tuple._2;
 			long categoryid = Long.valueOf(StringUtils.getFieldFromConcatString(
