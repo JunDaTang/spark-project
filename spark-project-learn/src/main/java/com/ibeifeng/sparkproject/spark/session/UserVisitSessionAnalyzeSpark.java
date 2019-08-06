@@ -87,7 +87,16 @@ public class UserVisitSessionAnalyzeSpark {
 		// 构建Spark上下文
 		SparkConf conf = new SparkConf()
 				.setAppName(Constants.SPARK_APP_NAME_SESSION)
-				.setMaster("local");    
+				.setMaster("local")
+				.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+				.registerKryoClasses(new Class[]{CategorySortKey.class});  
+				
+		/**
+		 * 比如，获取top10热门品类功能中，二次排序，自定义了一个Key
+		 * 那个key是需要在进行shuffle的时候，进行网络传输的，因此也是要求实现序列化的
+		 * 启用Kryo机制以后，就会用Kryo去序列化和反序列化CategorySortKey
+		 * 所以这里要求，为了获取最佳性能，注册一下我们自定义的类
+		 */
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		SQLContext sqlContext = getSQLContext(sc.sc());
 		
