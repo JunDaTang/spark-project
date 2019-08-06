@@ -19,6 +19,7 @@ import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
@@ -145,7 +146,6 @@ public class UserVisitSessionAnalyzeSpark {
 		// 到这里为止，获取的数据是<sessionid,(sessionid,searchKeywords,clickCategoryIds,age,professional,city,sex)>  
 		JavaPairRDD<String, String> sessionid2AggrInfoRDD = 
 				aggregateBySession(sqlContext, sessionid2actionRDD);
-		System.out.println("sessionid2AggrInfoRDD.count():" + sessionid2AggrInfoRDD.count());
 		// 接着，就要针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤
 		// 相当于我们自己编写的算子，是要访问外面的任务参数对象的
 		// 所以，大家记得我们之前说的，匿名内部类（算子函数），访问外部对象，是要给外部对象使用final修饰的
@@ -183,7 +183,7 @@ public class UserVisitSessionAnalyzeSpark {
 		 * 计算出来的结果，在J2EE中，是怎么显示的，是用两张柱状图显示
 		 */
 		
-		randomExtractSession(task.getTaskid(), 
+		randomExtractSession(sc, task.getTaskid(), 
 				filteredSessionid2AggrInfoRDD, sessionid2detailRDD);
 		
 		/**
@@ -703,6 +703,7 @@ public class UserVisitSessionAnalyzeSpark {
 	 * @param sessionid2AggrInfoRDD  
 	 */
 	private static void randomExtractSession(
+			JavaSparkContext sc,
 			final long taskid,
 			JavaPairRDD<String, String> sessionid2AggrInfoRDD,
 			JavaPairRDD<String, Row> sessionid2actionRDD) { 
@@ -773,7 +774,18 @@ public class UserVisitSessionAnalyzeSpark {
 		int extractNumberPerDay = 100 / dateHourCountMap.size();
 		
 		// <date,<hour,(3,5,20,102)>>  
-		final Map<String, Map<String, List<Integer>>> dateHourExtractMap = 
+		
+		/**
+		 * session随机抽取功能
+		 * 
+		 * 用到了一个比较大的变量，随机抽取索引map
+		 * 之前是直接在算子里面使用了这个map，那么根据我们刚才讲的这个原理，每个task都会拷贝一份map副本
+		 * 还是比较消耗内存和网络传输性能的
+		 * 
+		 * 将map做成广播变量
+		 * 
+		 */
+		Map<String, Map<String, List<Integer>>> dateHourExtractMap = 
 				new HashMap<String, Map<String, List<Integer>>>();
 		
 		Random random = new Random();
@@ -826,6 +838,14 @@ public class UserVisitSessionAnalyzeSpark {
 		}
 		
 		/**
+		/**
+		 * 广播变量，很简单
+		 * 其实就是SparkContext的broadcast()方法，传入你要广播的变量，即可
+		 */		
+		
+		final Broadcast<Map<String, Map<String, List<Integer>>>> dateHourExtractMapBroadcast = 
+				sc.broadcast(dateHourExtractMap);
+		/*
 		 * 第三步：遍历每天每小时的session，然后根据随机索引进行抽取
 		 */
 		
@@ -856,6 +876,13 @@ public class UserVisitSessionAnalyzeSpark {
 						String hour = dateHour.split("_")[1];
 						Iterator<String> iterator = tuple._2.iterator();
 						
+						/**
+						 * 使用广播变量的时候
+						 * 直接调用广播变量（Broadcast类型）的value() / getValue() 
+						 * 可以获取到之前封装的广播变量
+						 */
+						Map<String, Map<String, List<Integer>>> dateHourExtractMap = 
+								dateHourExtractMapBroadcast.value();
 						List<Integer> extractIndexList = dateHourExtractMap.get(date).get(hour);  
 						
 						ISessionRandomExtractDAO sessionRandomExtractDAO = 
