@@ -10,7 +10,7 @@ Target Server Type    : MYSQL
 Target Server Version : 50711
 File Encoding         : 65001
 
-Date: 2019-07-10 16:37:30
+Date: 2019-08-06 08:54:05
 */
 
 SET FOREIGN_KEY_CHECKS=0;
@@ -31,34 +31,13 @@ CREATE TABLE `top10_category` (
 -- ----------------------------
 -- Records of top10_category
 -- ----------------------------
-INSERT INTO `top10_category` VALUES ('2', '0', '312', '4', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '251', '2', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '147', '1', '1');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
-INSERT INTO `top10_category` VALUES ('2', '0', '509', '1', '0');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
+INSERT INTO `top10_category` VALUES ('2', '0', '7058', '30', '26');
