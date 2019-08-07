@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
+import org.apache.parquet.it.unimi.dsi.fastutil.ints.IntArrayList;
+import org.apache.parquet.it.unimi.dsi.fastutil.ints.IntList;
 import org.apache.spark.Accumulator;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
@@ -847,14 +849,46 @@ public class UserVisitSessionAnalyzeSpark {
 		}
 		
 		/**
+		 * fastutil的使用，很简单，比如List<Integer>的list，对应到fastutil，就是IntList
+		 */
+		Map<String, Map<String, IntList>> fastutilDateHourExtractMap = 
+				new HashMap<String, Map<String, IntList>>();
+		
+		
+		
+		for(Map.Entry<String, Map<String, List<Integer>>> dateHourExtractEntry : 
+				dateHourExtractMap.entrySet()) {
+			String date = dateHourExtractEntry.getKey();
+			Map<String, List<Integer>> hourExtractMap = dateHourExtractEntry.getValue();
+			
+			Map<String, IntList> fastutilHourExtractMap = new HashMap<String, IntList>();
+			
+			for(Map.Entry<String, List<Integer>> hourExtractEntry : hourExtractMap.entrySet()) {
+				String hour = hourExtractEntry.getKey();
+				List<Integer> extractList = hourExtractEntry.getValue();
+				
+				IntList fastutilExtractList = new IntArrayList();
+				
+				for(int i = 0; i < extractList.size(); i++) {
+					fastutilExtractList.add(extractList.get(i));  
+				}
+				
+				fastutilHourExtractMap.put(hour, fastutilExtractList);
+			}
+			
+			fastutilDateHourExtractMap.put(date, fastutilHourExtractMap);
+		}
+		
 		/**
 		 * 广播变量，很简单
 		 * 其实就是SparkContext的broadcast()方法，传入你要广播的变量，即可
 		 */		
 		
-		final Broadcast<Map<String, Map<String, List<Integer>>>> dateHourExtractMapBroadcast = 
-				sc.broadcast(dateHourExtractMap);
-		/*
+		
+		final Broadcast<Map<String, Map<String, IntList>>> dateHourExtractMapBroadcast = 
+				sc.broadcast(fastutilDateHourExtractMap);
+		
+		/**
 		 * 第三步：遍历每天每小时的session，然后根据随机索引进行抽取
 		 */
 		
@@ -890,7 +924,7 @@ public class UserVisitSessionAnalyzeSpark {
 						 * 直接调用广播变量（Broadcast类型）的value() / getValue() 
 						 * 可以获取到之前封装的广播变量
 						 */
-						Map<String, Map<String, List<Integer>>> dateHourExtractMap = 
+						Map<String, Map<String, IntList>> dateHourExtractMap = 
 								dateHourExtractMapBroadcast.value();
 						List<Integer> extractIndexList = dateHourExtractMap.get(date).get(hour);  
 						
