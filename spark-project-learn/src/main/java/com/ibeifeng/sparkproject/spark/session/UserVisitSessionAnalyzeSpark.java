@@ -95,7 +95,7 @@ public class UserVisitSessionAnalyzeSpark {
 				.set("spark.shuffle.file.buffer", "64")  
 				.set("spark.shuffle.memoryFraction", "0.3")    
 				.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-				.registerKryoClasses(new Class[]{CategorySortKey.class});  
+				.registerKryoClasses(new Class[]{CategorySortKey.class,IntList.class});  
 				
 		/**
 		 * 比如，获取top10热门品类功能中，二次排序，自定义了一个Key
