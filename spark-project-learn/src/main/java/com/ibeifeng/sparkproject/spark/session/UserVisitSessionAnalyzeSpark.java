@@ -92,6 +92,8 @@ public class UserVisitSessionAnalyzeSpark {
 				.setMaster("local")
 				.set("spark.storage.memoryFraction", "0.5")
 				.set("spark.shuffle.consolidateFiles", "true")
+				.set("spark.shuffle.file.buffer", "64")  
+				.set("spark.shuffle.memoryFraction", "0.3")    
 				.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 				.registerKryoClasses(new Class[]{CategorySortKey.class});  
 				
