@@ -333,13 +333,32 @@ public class UserVisitSessionAnalyzeSpark {
 	 * @return
 	 */
 	public static JavaPairRDD<String, Row> getSessionid2ActionRDD(JavaRDD<Row> actionRDD) {
-		return actionRDD.mapToPair(new PairFunction<Row, String, Row>() {
+//		return actionRDD.mapToPair(new PairFunction<Row, String, Row>() {
+//
+//			private static final long serialVersionUID = 1L;
+//			
+//			@Override
+//			public Tuple2<String, Row> call(Row row) throws Exception {
+//				return new Tuple2<String, Row>(row.getString(2), row);  
+//			}
+//			
+//		});
+		
+		return actionRDD.mapPartitionsToPair(new PairFlatMapFunction<Iterator<Row>, String, Row>() {
 
 			private static final long serialVersionUID = 1L;
 
 			@Override
-			public Tuple2<String, Row> call(Row row) throws Exception {
-				return new Tuple2<String, Row>(row.getString(2), row);  
+			public Iterable<Tuple2<String, Row>> call(Iterator<Row> iterator)
+					throws Exception {
+				List<Tuple2<String, Row>> list = new ArrayList<Tuple2<String, Row>>();
+				
+				while(iterator.hasNext()) {
+					Row row = iterator.next();
+					list.add(new Tuple2<String, Row>(row.getString(2), row));  
+				}
+				
+				return list;
 			}
 			
 		});
