@@ -1431,26 +1431,28 @@ public class UserVisitSessionAnalyzeSpark {
 					
 				});
 		
+		/**
+		 * 提升shuffle reduce端并行度
+		 */
+		
+//		JavaPairRDD<Long, Long> clickCategoryId2CountRDD = clickCategoryIdRDD.reduceByKey(
+//				
+//				new Function2<Long, Long, Long>() {
+	//
+//					private static final long serialVersionUID = 1L;
+	//
+//					@Override
+//					public Long call(Long v1, Long v2) throws Exception {
+//						return v1 + v2;
+//					}
+//					
+//				},
+//				1000);//传入1000，代表reduce端有1000个task并行度执行
+
 		return clickCategoryId2CountRDD;
 	}
 	
-	/**
-	 * 提升shuffle reduce端并行度
-	 */
 	
-//	JavaPairRDD<Long, Long> clickCategoryId2CountRDD = clickCategoryIdRDD.reduceByKey(
-//			
-//			new Function2<Long, Long, Long>() {
-//
-//				private static final long serialVersionUID = 1L;
-//
-//				@Override
-//				public Long call(Long v1, Long v2) throws Exception {
-//					return v1 + v2;
-//				}
-//				
-//			},
-//			1000);//传入1000，代表reduce端有1000个task并行度执行
 	
 	/**
 	 * 获取各品类的下单次数RDD
