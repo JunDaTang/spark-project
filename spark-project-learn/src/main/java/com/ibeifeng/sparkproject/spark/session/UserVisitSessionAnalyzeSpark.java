@@ -95,6 +95,8 @@ public class UserVisitSessionAnalyzeSpark {
 				.set("spark.shuffle.file.buffer", "64")  
 				.set("spark.shuffle.memoryFraction", "0.3") 
 				.set("spark.reducer.maxSizeInFlight", "24") 
+				.set("spark.shuffle.io.maxRetries", "60")
+				.set("spark.shuffle.io.maxRetries", "60")
 				.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 				.registerKryoClasses(new Class[]{CategorySortKey.class,IntList.class});  
 				
@@ -105,6 +107,7 @@ public class UserVisitSessionAnalyzeSpark {
 		 * 所以这里要求，为了获取最佳性能，注册一下我们自定义的类
 		 */
 		JavaSparkContext sc = new JavaSparkContext(conf);
+//		sc.checkpointFile("hdfs://");
 		SQLContext sqlContext = getSQLContext(sc.sc());
 		
 		// 生成模拟测试数据
@@ -154,7 +157,7 @@ public class UserVisitSessionAnalyzeSpark {
 		 * 
 		 */
 		sessionid2actionRDD = sessionid2actionRDD.persist(StorageLevel.MEMORY_ONLY());
-		
+//		sessionid2actionRDD.checkpoint();
 		// 首先，可以将行为数据，按照session_id进行groupByKey分组
 		// 此时的数据的粒度就是session粒度了，然后呢，可以将session粒度的数据
 		// 与用户信息数据，进行join
