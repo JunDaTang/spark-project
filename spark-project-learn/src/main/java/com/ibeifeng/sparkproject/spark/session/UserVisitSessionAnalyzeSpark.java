@@ -164,7 +164,7 @@ public class UserVisitSessionAnalyzeSpark {
 		// 然后就可以获取到session粒度的数据，同时呢，数据里面还包含了session对应的user的信息
 		// 到这里为止，获取的数据是<sessionid,(sessionid,searchKeywords,clickCategoryIds,age,professional,city,sex)>  
 		JavaPairRDD<String, String> sessionid2AggrInfoRDD = 
-				aggregateBySession(sqlContext, sessionid2actionRDD);
+				aggregateBySession(sc, sqlContext, sessionid2actionRDD);
 		// 接着，就要针对session粒度的聚合数据，按照使用者指定的筛选参数进行数据过滤
 		// 相当于我们自己编写的算子，是要访问外面的任务参数对象的
 		// 所以，大家记得我们之前说的，匿名内部类（算子函数），访问外部对象，是要给外部对象使用final修饰的
@@ -384,7 +384,9 @@ public class UserVisitSessionAnalyzeSpark {
 	 * @return session粒度聚合数据
 	 */
 	private static JavaPairRDD<String, String> aggregateBySession(
-			SQLContext sqlContext, JavaPairRDD<String, Row> sessionid2actionRDD) {
+			JavaSparkContext sc,
+			SQLContext sqlContext, 
+			JavaPairRDD<String, Row> sessionid2actionRDD) {
 
 		// 对行为数据按session粒度进行分组
 		JavaPairRDD<String, Iterable<Row>> sessionid2ActionsRDD = 
@@ -518,6 +520,14 @@ public class UserVisitSessionAnalyzeSpark {
 					
 				});
 		
+		/**
+		 * 这里就可以说一下，比较适合采用reduce join转换为map join的方式
+		 * 
+		 * userid2PartAggrInfoRDD，可能数据量还是比较大，比如，可能在1千万数据
+		 * userid2InfoRDD，可能数据量还是比较小的，你的用户数量才10万用户
+		 * 
+		 */
+		
 		// 将session粒度聚合数据，与用户信息进行join
 		JavaPairRDD<Long, Tuple2<String, Row>> userid2FullInfoRDD = 
 				userid2PartAggrInfoRDD.join(userid2InfoRDD);
@@ -554,6 +564,53 @@ public class UserVisitSessionAnalyzeSpark {
 					}
 					
 				});
+		
+		/**
+		 * reduce join转换为map join
+		 */
+		
+//		List<Tuple2<Long, Row>> userInfos = userid2InfoRDD.collect();
+//		final Broadcast<List<Tuple2<Long, Row>>> userInfosBroadcast = sc.broadcast(userInfos);
+//		
+//		JavaPairRDD<String, String> sessionid2FullAggrInfoRDD = userid2PartAggrInfoRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<Long,String>, String, String>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Tuple2<String, String> call(Tuple2<Long, String> tuple)
+//							throws Exception {
+//						// 得到用户信息map
+//						List<Tuple2<Long, Row>> userInfos = userInfosBroadcast.value();
+//						
+//						Map<Long, Row> userInfoMap = new HashMap<Long, Row>();
+//						for(Tuple2<Long, Row> userInfo : userInfos) {
+//							userInfoMap.put(userInfo._1, userInfo._2);
+//						}
+//						
+//						// 获取到当前用户对应的信息
+//						String partAggrInfo = tuple._2;
+//						Row userInfoRow = userInfoMap.get(tuple._1);
+//						
+//						String sessionid = StringUtils.getFieldFromConcatString(
+//								partAggrInfo, "\\|", Constants.FIELD_SESSION_ID);
+//						
+//						int age = userInfoRow.getInt(3);
+//						String professional = userInfoRow.getString(4);
+//						String city = userInfoRow.getString(5);
+//						String sex = userInfoRow.getString(6);
+//						
+//						String fullAggrInfo = partAggrInfo + "|"
+//								+ Constants.FIELD_AGE + "=" + age + "|"
+//								+ Constants.FIELD_PROFESSIONAL + "=" + professional + "|"
+//								+ Constants.FIELD_CITY + "=" + city + "|"
+//								+ Constants.FIELD_SEX + "=" + sex;
+//						
+//						return new Tuple2<String, String>(sessionid, fullAggrInfo);
+//					}
+//					
+//				});
 		
 		return sessionid2FullAggrInfoRDD;
 	}
