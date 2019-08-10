@@ -1449,6 +1449,78 @@ public class UserVisitSessionAnalyzeSpark {
 //				},
 //				1000);//传入1000，代表reduce端有1000个task并行度执行
 
+		/**
+		 * 使用随机key实现双重聚合
+		 */
+		
+//		/**
+//		 * 第一步，给每个key打上一个随机数
+//		 */
+//		JavaPairRDD<String, Long> mappedClickCategoryIdRDD = clickCategoryIdRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<Long,Long>, String, Long>() {
+//
+//					private static final long serialVersionUID = 1L;
+//		
+//					@Override
+//					public Tuple2<String, Long> call(Tuple2<Long, Long> tuple)
+//							throws Exception {
+//						Random random = new Random();
+//						int prefix = random.nextInt(10);
+//						return new Tuple2<String, Long>(prefix + "_" + tuple._1, tuple._2);
+//					}
+//					
+//				});
+//		
+//		/**
+//		 * 第二步，执行第一轮局部聚合
+//		 */
+//		JavaPairRDD<String, Long> firstAggrRDD = mappedClickCategoryIdRDD.reduceByKey(
+//				
+//				new Function2<Long, Long, Long>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Long call(Long v1, Long v2) throws Exception {
+//						return v1 + v2;
+//					}
+//					
+//				});
+//		
+//		/**
+//		 * 第三步，去除掉每个key的前缀
+//		 */
+//		JavaPairRDD<Long, Long> restoredRDD = firstAggrRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<String,Long>, Long, Long>() {
+//
+//					private static final long serialVersionUID = 1L;
+//		
+//					@Override
+//					public Tuple2<Long, Long> call(Tuple2<String, Long> tuple)
+//							throws Exception {
+//						long categoryId = Long.valueOf(tuple._1.split("_")[1]);  
+//						return new Tuple2<Long, Long>(categoryId, tuple._2);  
+//					}
+//					
+//				});
+//		
+//		/**
+//		 * 第四步，最第二轮全局的聚合
+//		 */
+//		JavaPairRDD<Long, Long> clickCategoryId2CountRDD = restoredRDD.reduceByKey(
+//				
+//				new Function2<Long, Long, Long>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Long call(Long v1, Long v2) throws Exception {
+//						return v1 + v2;
+//					}
+//					
+//				});
 		return clickCategoryId2CountRDD;
 	}
 	
