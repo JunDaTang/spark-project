@@ -790,6 +790,18 @@ public class UserVisitSessionAnalyzeSpark {
 		 */
 		
 		// 得到每天每小时的session数量
+		
+		/**
+		 * 每天每小时的session数量的计算
+		 * 是有可能出现数据倾斜的吧，这个是没有疑问的
+		 * 比如说大部分小时，一般访问量也就10万；但是，中午12点的时候，高峰期，一个小时1000万
+		 * 这个时候，就会发生数据倾斜
+		 * 
+		 * 我们就用这个countByKey操作，给大家演示第三种和第四种方案
+		 * 但countByKey无传入并行度的参数，应该没法做这实验，现改为其他方法来尝试，
+		 * 见：clickCategoryIdRDD.reduceByKey
+		 */
+		
 		Map<String, Object> countMap = time2sessionidRDD.countByKey();
 		
 		/**
@@ -1400,6 +1412,12 @@ public class UserVisitSessionAnalyzeSpark {
 					
 				});
 		
+		/**
+		 * 计算各个品类的点击次数
+		 * 
+		 * 如果某个品类点击了1000万次，其他品类都是10万次，那么也会数据倾斜
+		 * 
+		 */
 		JavaPairRDD<Long, Long> clickCategoryId2CountRDD = clickCategoryIdRDD.reduceByKey(
 				
 				new Function2<Long, Long, Long>() {
@@ -1415,6 +1433,24 @@ public class UserVisitSessionAnalyzeSpark {
 		
 		return clickCategoryId2CountRDD;
 	}
+	
+	/**
+	 * 提升shuffle reduce端并行度
+	 */
+	
+//	JavaPairRDD<Long, Long> clickCategoryId2CountRDD = clickCategoryIdRDD.reduceByKey(
+//			
+//			new Function2<Long, Long, Long>() {
+//
+//				private static final long serialVersionUID = 1L;
+//
+//				@Override
+//				public Long call(Long v1, Long v2) throws Exception {
+//					return v1 + v2;
+//				}
+//				
+//			},
+//			1000);//传入1000，代表reduce端有1000个task并行度执行
 	
 	/**
 	 * 获取各品类的下单次数RDD
