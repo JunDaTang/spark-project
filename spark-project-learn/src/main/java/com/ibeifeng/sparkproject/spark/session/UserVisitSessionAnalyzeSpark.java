@@ -612,6 +612,190 @@ public class UserVisitSessionAnalyzeSpark {
 //					
 //				});
 		
+		/**
+		 * sample采样倾斜key单独进行join
+		 */
+		
+//		JavaPairRDD<Long, String> sampledRDD = userid2PartAggrInfoRDD.sample(false, 0.1, 9);
+//		
+//		JavaPairRDD<Long, Long> mappedSampledRDD = sampledRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<Long,String>, Long, Long>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Tuple2<Long, Long> call(Tuple2<Long, String> tuple)
+//							throws Exception {
+//						return new Tuple2<Long, Long>(tuple._1, 1L);
+//					}
+//					
+//				});
+//		
+//		JavaPairRDD<Long, Long> computedSampledRDD = mappedSampledRDD.reduceByKey(
+//				
+//				new Function2<Long, Long, Long>() {
+//
+//					private static final long serialVersionUID = 1L;
+//		
+//					@Override
+//					public Long call(Long v1, Long v2) throws Exception {
+//						return v1 + v2;
+//					}
+//					
+//				});
+//		
+//		JavaPairRDD<Long, Long> reversedSampledRDD = computedSampledRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<Long,Long>, Long, Long>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Tuple2<Long, Long> call(Tuple2<Long, Long> tuple)
+//							throws Exception {
+//						return new Tuple2<Long, Long>(tuple._2, tuple._1);
+//					}
+//					
+//				});
+//		
+//		final Long skewedUserid = reversedSampledRDD.sortByKey(false).take(1).get(0)._2;  
+//		
+//		JavaPairRDD<Long, String> skewedRDD = userid2PartAggrInfoRDD.filter(
+//				
+//				new Function<Tuple2<Long,String>, Boolean>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Boolean call(Tuple2<Long, String> tuple) throws Exception {
+//						return tuple._1.equals(skewedUserid);
+//					}
+//					
+//				});
+//			
+//		JavaPairRDD<Long, String> commonRDD = userid2PartAggrInfoRDD.filter(
+//				
+//				new Function<Tuple2<Long,String>, Boolean>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Boolean call(Tuple2<Long, String> tuple) throws Exception {
+//						return !tuple._1.equals(skewedUserid);
+//					}
+//					
+//				});
+//		
+//		JavaPairRDD<Long, Tuple2<String, Row>> joinedRDD1 = skewedRDD.join(userid2InfoRDD);
+//		JavaPairRDD<Long, Tuple2<String, Row>> joinedRDD2 = commonRDD.join(userid2InfoRDD);
+//		
+//		JavaPairRDD<Long, Tuple2<String, Row>> joinedRDD = joinedRDD1.union(joinedRDD2);
+//		JavaPairRDD<String, String> finalRDD = joinedRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<Long,Tuple2<String,Row>>, String, String>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Tuple2<String, String> call(
+//							Tuple2<Long, Tuple2<String, Row>> tuple)
+//							throws Exception {
+//						String partAggrInfo = tuple._2._1;
+//						Row userInfoRow = tuple._2._2;
+//						
+//						String sessionid = StringUtils.getFieldFromConcatString(
+//								partAggrInfo, "\\|", Constants.FIELD_SESSION_ID);
+//						
+//						int age = userInfoRow.getInt(3);
+//						String professional = userInfoRow.getString(4);
+//						String city = userInfoRow.getString(5);
+//						String sex = userInfoRow.getString(6);
+//						
+//						String fullAggrInfo = partAggrInfo + "|"
+//								+ Constants.FIELD_AGE + "=" + age + "|"
+//								+ Constants.FIELD_PROFESSIONAL + "=" + professional + "|"
+//								+ Constants.FIELD_CITY + "=" + city + "|"
+//								+ Constants.FIELD_SEX + "=" + sex;
+//						
+//						return new Tuple2<String, String>(sessionid, fullAggrInfo);
+//					}
+//					
+//				});
+//		
+		/**
+		 * 使用随机数和扩容表进行join
+		 */
+		
+//		JavaPairRDD<String, Row> expandedRDD = userid2InfoRDD.flatMapToPair(
+//				
+//				new PairFlatMapFunction<Tuple2<Long,Row>, String, Row>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Iterable<Tuple2<String, Row>> call(Tuple2<Long, Row> tuple)
+//							throws Exception {
+//						List<Tuple2<String, Row>> list = new ArrayList<Tuple2<String, Row>>();
+//						
+//						for(int i = 0; i < 10; i++) {
+//							list.add(new Tuple2<String, Row>(0 + "_" + tuple._1, tuple._2));
+//						}
+//						
+//						return list;
+//					}
+//					
+//				});
+//		
+//		JavaPairRDD<String, String> mappedRDD = userid2PartAggrInfoRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<Long,String>, String, String>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Tuple2<String, String> call(Tuple2<Long, String> tuple)
+//							throws Exception {
+//						Random random = new Random();
+//						int prefix = random.nextInt(10);
+//						return new Tuple2<String, String>(prefix + "_" + tuple._1, tuple._2);  
+//					}
+//					
+//				});
+//		
+//		JavaPairRDD<String, Tuple2<String, Row>> joinedRDD = mappedRDD.join(expandedRDD);
+//		
+//		JavaPairRDD<String, String> finalRDD = joinedRDD.mapToPair(
+//				
+//				new PairFunction<Tuple2<String,Tuple2<String,Row>>, String, String>() {
+//
+//					private static final long serialVersionUID = 1L;
+//
+//					@Override
+//					public Tuple2<String, String> call(
+//							Tuple2<String, Tuple2<String, Row>> tuple)
+//							throws Exception {
+//						String partAggrInfo = tuple._2._1;
+//						Row userInfoRow = tuple._2._2;
+//						
+//						String sessionid = StringUtils.getFieldFromConcatString(
+//								partAggrInfo, "\\|", Constants.FIELD_SESSION_ID);
+//						
+//						int age = userInfoRow.getInt(3);
+//						String professional = userInfoRow.getString(4);
+//						String city = userInfoRow.getString(5);
+//						String sex = userInfoRow.getString(6);
+//						
+//						String fullAggrInfo = partAggrInfo + "|"
+//								+ Constants.FIELD_AGE + "=" + age + "|"
+//								+ Constants.FIELD_PROFESSIONAL + "=" + professional + "|"
+//								+ Constants.FIELD_CITY + "=" + city + "|"
+//								+ Constants.FIELD_SEX + "=" + sex;
+//						
+//						return new Tuple2<String, String>(sessionid, fullAggrInfo);
+//					}
+//					
+//				});
 		return sessionid2FullAggrInfoRDD;
 	}
 	
