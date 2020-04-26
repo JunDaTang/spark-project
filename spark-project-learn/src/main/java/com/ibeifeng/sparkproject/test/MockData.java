@@ -57,7 +57,7 @@ public class MockData {
 					String orderProductIds = null;
 					String payCategoryIds = null;
 					String payProductIds = null;
-					
+					Long cityId = Long.valueOf(String.valueOf(random.nextInt(10)));
 					String action = actions[random.nextInt(4)];
 					if("search".equals(action)) {
 						searchKeyword = searchKeywords[random.nextInt(10)];   
@@ -76,7 +76,7 @@ public class MockData {
 							pageid, actionTime, searchKeyword,
 							clickCategoryId, clickProductId,
 							orderCategoryIds, orderProductIds,
-							payCategoryIds, payProductIds);
+							payCategoryIds, payProductIds, cityId);
 					rows.add(row);
 				}
 			}
@@ -96,8 +96,8 @@ public class MockData {
 				DataTypes.createStructField("order_category_ids", DataTypes.StringType, true),
 				DataTypes.createStructField("order_product_ids", DataTypes.StringType, true),
 				DataTypes.createStructField("pay_category_ids", DataTypes.StringType, true),
-				DataTypes.createStructField("pay_product_ids", DataTypes.StringType, true)));
-		
+				DataTypes.createStructField("pay_product_ids", DataTypes.StringType, true),
+				DataTypes.createStructField("city_id", DataTypes.LongType, true)));
 		DataFrame df = sqlContext.createDataFrame(rowsRDD, schema);
 		
 		df.registerTempTable("user_visit_action");  
@@ -142,6 +142,37 @@ public class MockData {
 		}
 		
 		df2.registerTempTable("user_info");  
+		
+		
+		/**
+		 * ==================================================================
+		 */
+//		2、Hive表中，要有一个product_info表，product_id、product_name、extend_info
+		rows.clear();
+		// add data in rows
+		int[] productStatus = new int[]{0, 1};
+		for(int i = 0; i < 100; i++) {
+			long productId = i;
+			String productName = "product" + i;
+			String extendInfo = "{\"product_status\": " + productStatus[random.nextInt(2)] + "}";   
+			Row row = RowFactory.create(productId, productName,extendInfo);
+			rows.add(row);
+		}
+		
+		// new rdd and create schema、create dataframe
+		rowsRDD = sc.parallelize(rows);
+		StructType schema3 = DataTypes.createStructType(Arrays.asList(
+				DataTypes.createStructField("product_id", DataTypes.LongType, true),
+				DataTypes.createStructField("product_name", DataTypes.StringType, true),
+				DataTypes.createStructField("extend_info", DataTypes.StringType, true)
+				));
+		
+		DataFrame df3 = sqlContext.createDataFrame(rowsRDD, schema3);
+		for(Row _row : df3.take(1)) {
+			System.out.println(_row);
+		}
+		df3.registerTempTable("product_info");
+		
 	}
 	
 }
