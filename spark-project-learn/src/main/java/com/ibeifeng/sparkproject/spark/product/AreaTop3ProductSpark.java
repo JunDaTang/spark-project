@@ -18,6 +18,7 @@ import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SQLContext;
+import org.apache.spark.sql.api.java.UDF3;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
@@ -31,7 +32,10 @@ import com.ibeifeng.sparkproject.domain.Task;
 import com.ibeifeng.sparkproject.util.ParamUtils;
 import com.ibeifeng.sparkproject.util.SparkUtils;
 
+import scala.Function1;
+import scala.Function2;
 import scala.Tuple2;
+import scala.runtime.BoxedUnit;
 
 /*
 1、查询task，获取日期范围，通过Spark SQL，查询user_visit_action表中的指定日期范围内的数据，过滤出，商品点击行为，click_product_id is not null；click_product_id != 'NULL'；click_product_id != 'null'；city_id，click_product_id
@@ -49,6 +53,17 @@ public class AreaTop3ProductSpark {
 		SparkUtils.setMaster(conf);
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		SQLContext sqlContext = SparkUtils.getSQLContext(sc.sc());
+		
+		// 定义udf自定义函数:concat_long_string：返回结果，例：“1,北京”
+		sqlContext.udf().register("concat_long_string", new UDF3<Long, String, String, String>(){
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public String call(Long cityId, String cityName, String split) throws Exception {
+				// TODO Auto-generated method stub
+				return cityId.toString() + split + cityName;
+			}
+		}, DataTypes.StringType);
 		// 生成数据
 		SparkUtils.mockData(sc, sqlContext);
 		
@@ -80,6 +95,19 @@ public class AreaTop3ProductSpark {
 		// 生成点击商品基础信息临时表
 		// 技术点3：将RDD转换为DataFrame，并注册临时表
 		enerateTempClickProductBasicTable(sqlContext, cityid2clickActionRDD, cityid2cityInfoRDD);
+		
+		
+		
+		//4、计算出来每个区域下每个商品的点击次数，group by area, product_id；保留每个区域的城市名称列表；自定义UDAF，group_concat_distinct()函数，聚合出来一个city_names字段，area、product_id、city_names、click_count
+		// 1 北京
+		// 2 上海
+		// 1 北京
+		// group by area,product_id
+		// 1:北京,2:上海
+		
+		// 两个函数
+		// UDF：concat2()，将两个字段拼接起来，用指定的分隔符
+		// UDAF：group_concat_distinct()，将一个分组中的多个字段值，用逗号拼接起来，同时进行去重
 		sc.close();
 	}
 	
@@ -123,8 +151,8 @@ public class AreaTop3ProductSpark {
 		
 		DataFrame df = sqlContext.createDataFrame(mappedRDD, schema);
 		
-		System.out.println("tmp_click_product_basic" + df.count());
-		df.show();
+//		System.out.println("tmp_click_product_basic" + df.count());
+//		df.show();
 		df.registerTempTable("tmp_click_product_basic");
 	}
 	
