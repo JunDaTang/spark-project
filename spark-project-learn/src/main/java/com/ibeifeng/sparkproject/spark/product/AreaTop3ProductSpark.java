@@ -37,9 +37,10 @@ import scala.Tuple2;
 public class AreaTop3ProductSpark {
 	public static void main(String[] args) {
 		// init
-		SparkConf conf = new SparkConf().setAppName("AreaTop3ProductSpark").setMaster("local");
+		SparkConf conf = new SparkConf().setAppName("AreaTop3ProductSpark");
+		SparkUtils.setMaster(conf);
 		JavaSparkContext sc = new JavaSparkContext(conf);
-		SQLContext sqlContext = new SQLContext(sc);
+		SQLContext sqlContext = SparkUtils.getSQLContext(sc.sc());
 		// 生成数据
 		SparkUtils.mockData(sc, sqlContext);
 		
@@ -55,8 +56,10 @@ public class AreaTop3ProductSpark {
 		
 		// 查询user_visit_action表中的指定日期范围内的数据，过滤出，商品点击行为; 
 		// RDD:<cityid,商品点击行为> -> <city_id,(city_id, product_id)>
-		JavaPairRDD<Long, Row> cityid2ClickActionRDD = getcityid2ClickActionRDDByDate(sqlContext, startDate,endDate);
-		cityid2ClickActionRDD.foreach(new VoidFunction<Tuple2<Long,Row>>() {
+		JavaPairRDD<Long, Row> cityid2clickActionRDD = getcityid2ClickActionRDDByDate(sqlContext, startDate,endDate);
+		
+		System.out.println("cityid2clickActionRDD: " + cityid2clickActionRDD.count());  
+		cityid2clickActionRDD.foreach(new VoidFunction<Tuple2<Long,Row>>() {
 			
 			@Override
 			public void call(Tuple2<Long, Row> t) throws Exception {
