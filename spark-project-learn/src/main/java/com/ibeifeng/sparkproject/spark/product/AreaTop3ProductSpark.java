@@ -1,6 +1,8 @@
 package com.ibeifeng.sparkproject.spark.product;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.apache.commons.httpclient.util.DateUtil;
 import org.apache.spark.SparkConf;
@@ -16,6 +18,7 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructType;
 
 import com.alibaba.fastjson.JSONObject;
+import com.ibeifeng.sparkproject.conf.ConfigurationManager;
 import com.ibeifeng.sparkproject.constant.Constants;
 import com.ibeifeng.sparkproject.dao.ITaskDAO;
 import com.ibeifeng.sparkproject.dao.factory.DAOFactory;
@@ -56,20 +59,72 @@ public class AreaTop3ProductSpark {
 		
 		// 查询user_visit_action表中的指定日期范围内的数据，过滤出，商品点击行为; 
 		// RDD:<cityid,商品点击行为> -> <city_id,(city_id, product_id)>
+		// 技术点1：Hive数据源的使用
 		JavaPairRDD<Long, Row> cityid2clickActionRDD = getcityid2ClickActionRDDByDate(sqlContext, startDate,endDate);
 		
 		System.out.println("cityid2clickActionRDD: " + cityid2clickActionRDD.count());  
-		cityid2clickActionRDD.foreach(new VoidFunction<Tuple2<Long,Row>>() {
-			
+		
+		// 从MySQL中查询城市信息,RDD: <city_id, (city_id, city_name, area) >
+		// 技术点2：异构数据源之MySQL的使用
+		JavaPairRDD<Long, Row> cityid2CityInfoRDD = getcityid2CityInfoRDD(sqlContext);
+		System.out.println("cityid2CityInfoRDD: " + cityid2CityInfoRDD.count()); 
+		
+		sc.close();
+	}
+	/**查询城市信息
+	 * @param sqlContext
+	 * @return 城市信息
+	 */
+	public static JavaPairRDD<Long, Row> getcityid2CityInfoRDD(SQLContext sqlContext){
+		// 分别将mysql中两张表的数据加载为DataFrame
+//		Map<String, String> options = new HashMap<String, String>();
+//		options.put("url", "jdbc:mysql://spark1:3306/testdb");
+//		options.put("dbtable", "student_infos");
+//		DataFrame studentInfosDF = sqlContext.read().format("jdbc")
+//				.options(options).load();
+//	
+//		options.put("dbtable", "student_scores");
+//		DataFrame studentScoresDF = sqlContext.read().format("jdbc")
+//				.options(options).load();
+		// 连接mysql并获取city_info表数据
+		String url = null;
+		String user = null;
+		String password = null;
+		Boolean local = ConfigurationManager.getBoolean(Constants.SPARK_LOCAL);
+		if(local) {
+			url = ConfigurationManager.getProperty(Constants.JDBC_URL);
+			user = ConfigurationManager.getProperty(Constants.JDBC_USER);
+			password = ConfigurationManager.getProperty(Constants.JDBC_PASSWORD);
+		}else {
+			url = ConfigurationManager.getProperty(Constants.JDBC_URL_PROD);
+			user = ConfigurationManager.getProperty(Constants.JDBC_USER_PROD);
+			password = ConfigurationManager.getProperty(Constants.JDBC_PASSWORD_PROD);
+		}
+		
+		Map<String, String> options = new HashMap<String, String>();
+		options.put("url", url);
+		options.put("dbtable", "city_info");
+		options.put("user", user);
+		options.put("password", password);
+		
+		DataFrame cityInfoDF = sqlContext.read().format("jdbc").options(options).load();
+		JavaRDD<Row> cityInfoRDD = cityInfoDF.javaRDD();
+		
+		// 将表数据(city_id, city_name, area) 转化为 <city_id, (city_id, city_name, area) >
+		JavaPairRDD<Long, Row> cityid2CityInfoRDD = cityInfoRDD.mapToPair(new PairFunction<Row, Long, Row>() {
+
+			private static final long serialVersionUID = 1L;
+
 			@Override
-			public void call(Tuple2<Long, Row> t) throws Exception {
-				System.out.println("cityid:"+ t._1 + " row:" + t._2);
-				
+			public Tuple2<Long, Row> call(Row row) throws Exception {
+				Long cityId = Long.valueOf(String.valueOf(row.get(0)));
+				return new Tuple2<Long, Row>(cityId, row);
 			}
 		});
+		return cityid2CityInfoRDD;
 	}
 
-	/**查询user_visit_action表中的指定日期范围内的数据
+	/**查询指定日期范围内的数据
 	 * @param sqlContext
 	 * @param startDate 开始时间
 	 * @param endDate 结束时间
