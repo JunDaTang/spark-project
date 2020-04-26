@@ -1,7 +1,9 @@
 package com.ibeifeng.sparkproject.spark.product;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.httpclient.util.DateUtil;
@@ -9,12 +11,15 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
 import com.alibaba.fastjson.JSONObject;
@@ -64,13 +69,67 @@ public class AreaTop3ProductSpark {
 		
 		System.out.println("cityid2clickActionRDD: " + cityid2clickActionRDD.count());  
 		
+		// 2、使用Spark SQL从MySQL中查询出来城市信息（city_id、city_name、area），用户访问行为数据要跟城市信息进行join，city_id、city_name、area、product_id，RDD，转换成DataFrame，注册成一个临时表
+		
 		// 从MySQL中查询城市信息,RDD: <city_id, (city_id, city_name, area) >
 		// 技术点2：异构数据源之MySQL的使用
-		JavaPairRDD<Long, Row> cityid2CityInfoRDD = getcityid2CityInfoRDD(sqlContext);
-		System.out.println("cityid2CityInfoRDD: " + cityid2CityInfoRDD.count()); 
+		JavaPairRDD<Long, Row> cityid2cityInfoRDD = getcityid2CityInfoRDD(sqlContext);
+		System.out.println("cityid2CityInfoRDD: " + cityid2cityInfoRDD.count()); 
 		
+		
+		// 生成点击商品基础信息临时表
+		// 技术点3：将RDD转换为DataFrame，并注册临时表
+		enerateTempClickProductBasicTable(sqlContext, cityid2clickActionRDD, cityid2cityInfoRDD);
 		sc.close();
 	}
+	
+	/**生成点击商品基础信息临时表
+	 * @param sqlContext
+	 * @param cityid2clickActionRDD 商品点击行为
+	 * @param cityid2CityInfoRDD 城市信息
+	 */
+	public static void enerateTempClickProductBasicTable(SQLContext sqlContext, 
+			JavaPairRDD<Long, Row> cityid2clickActionRDD,
+			JavaPairRDD<Long, Row> cityid2cityInfoRDD) {
+		// join两RDD
+		JavaPairRDD<Long, Tuple2<Row, Row>> joinedRDD = cityid2clickActionRDD.join(cityid2cityInfoRDD);
+		
+		// 为df表准备源数据:city_id、city_name、area、product_id
+		JavaRDD<Row> mappedRDD = joinedRDD.map(new Function<Tuple2<Long,Tuple2<Row,Row>>, Row>() {
+
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Row call(Tuple2<Long, Tuple2<Row, Row>> tuple) throws Exception {
+				long cityId = tuple._1;
+				Row clickAction = tuple._2._1;
+				Row cityInfo = tuple._2._2;
+				String cityName = cityInfo.getString(1);
+				String area = cityInfo.getString(2);
+				long productId = clickAction.getLong(1);
+				
+				return new RowFactory().create(cityId, cityName, area, productId);
+			}
+		});
+		
+		// 创造schema
+		List<StructField> structFields = new ArrayList<StructField>();
+		structFields.add( DataTypes.createStructField("city_id", DataTypes.LongType, true));
+		structFields.add( DataTypes.createStructField("city_name", DataTypes.StringType, true));
+		structFields.add( DataTypes.createStructField("area", DataTypes.StringType, true));
+		structFields.add( DataTypes.createStructField("product_id", DataTypes.LongType, true));
+		StructType schema = DataTypes.createStructType(structFields);
+		
+		
+		DataFrame df = sqlContext.createDataFrame(mappedRDD, schema);
+		
+		System.out.println("tmp_click_product_basic" + df.count());
+		df.show();
+		df.registerTempTable("tmp_click_product_basic");
+	}
+	
+	
+	
 	/**查询城市信息
 	 * @param sqlContext
 	 * @return 城市信息
