@@ -27,8 +27,10 @@ import org.apache.spark.sql.types.StructType;
 import com.alibaba.fastjson.JSONObject;
 import com.ibeifeng.sparkproject.conf.ConfigurationManager;
 import com.ibeifeng.sparkproject.constant.Constants;
+import com.ibeifeng.sparkproject.dao.IAreaTop3ProductDAO1;
 import com.ibeifeng.sparkproject.dao.ITaskDAO;
 import com.ibeifeng.sparkproject.dao.factory.DAOFactory;
+import com.ibeifeng.sparkproject.domain.AreaTop3Product1;
 import com.ibeifeng.sparkproject.domain.Task;
 import com.ibeifeng.sparkproject.util.ParamUtils;
 import com.ibeifeng.sparkproject.util.SparkUtils;
@@ -139,7 +141,37 @@ public class AreaTop3ProductSpark {
 		JavaRDD<Row> areaTop3ProductRDD = getAreaTop3ProductRDD(sqlContext);
 		System.out.println("areaTop3ProductRDD:" + areaTop3ProductRDD.count());
 		
+		// 这边的写入mysql和之前不太一样
+		// 因为实际上，就这个业务需求而言，计算出来的最终数据量是比较小的
+		// 总共就不到10个区域，每个区域还是top3热门商品，总共最后数据量也就是几十个
+		// 所以可以直接将数据collect()到本地
+		// 用批量插入的方式，一次性插入mysql即可
+		persistAreaTop3Product(taskid, areaTop3ProductRDD);
 		sc.close();
+	}
+	
+	/**结果写入MySQL表中
+	 * @param taskid 任务id
+	 * @param row 各个区域内点击次数排名前3的热门商品
+	 */
+	public static void persistAreaTop3Product(Long taskid, JavaRDD<Row> rows) {
+		 IAreaTop3ProductDAO1 iAreaTop3ProductDAO1 = DAOFactory.getIAreaTop3ProductDAO1();
+		 ArrayList<AreaTop3Product1> areaTop3Products = new ArrayList<AreaTop3Product1>();
+		 List<Row> collect = rows.collect();
+		 for(Row row : collect) {
+			 AreaTop3Product1 areaTop3Product1 = new AreaTop3Product1();
+			 areaTop3Product1.setTaskId(Long.valueOf(String.valueOf(row.getString(0))));
+			 areaTop3Product1.setArea(row.getString(1));
+			 areaTop3Product1.setAreaLevel(row.getString(2));
+			 areaTop3Product1.setProductId(Long.valueOf(String.valueOf(row.getString(3))));
+			 areaTop3Product1.setClickCount(Long.valueOf(String.valueOf(row.getString(4))));
+			 areaTop3Product1.setCityInfos(row.getString(5));//cityinfo
+			 areaTop3Product1.setProductName(row.getString(6));
+			 areaTop3Product1.setProductStatus(row.getString(7));
+			 
+			 areaTop3Products.add(areaTop3Product1);
+		 }
+		 iAreaTop3ProductDAO1.insertBatch(areaTop3Products);
 	}
 	
 	/**使用开窗函数获取各个区域内点击次数排名前3的热门商品

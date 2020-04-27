@@ -6,6 +6,7 @@ import com.ibeifeng.sparkproject.dao.IAdProvinceTop3DAO;
 import com.ibeifeng.sparkproject.dao.IAdStatDAO;
 import com.ibeifeng.sparkproject.dao.IAdUserClickCountDAO;
 import com.ibeifeng.sparkproject.dao.IAreaTop3ProductDAO;
+import com.ibeifeng.sparkproject.dao.IAreaTop3ProductDAO1;
 import com.ibeifeng.sparkproject.dao.IPageSplitConvertRateDAO;
 import com.ibeifeng.sparkproject.dao.ISessionAggrStatDAO;
 import com.ibeifeng.sparkproject.dao.ISessionDetailDAO;
@@ -19,6 +20,7 @@ import com.ibeifeng.sparkproject.dao.impl.AdProvinceTop3DAOImpl;
 import com.ibeifeng.sparkproject.dao.impl.AdStatDAOImpl;
 import com.ibeifeng.sparkproject.dao.impl.AdUserClickCountDAOImpl;
 import com.ibeifeng.sparkproject.dao.impl.AreaTop3ProductDAOImpl;
+import com.ibeifeng.sparkproject.dao.impl.AreaTop3ProductDAOImpl1;
 import com.ibeifeng.sparkproject.dao.impl.PageSplitConvertRateDAOImpl;
 import com.ibeifeng.sparkproject.dao.impl.SessionAggrStatDAOImpl;
 import com.ibeifeng.sparkproject.dao.impl.SessionDetailDAOImpl;
@@ -85,6 +87,10 @@ public class DAOFactory {
 	
 	public static IAdClickTrendDAO getAdClickTrendDAO() {
 		return new AdClickTrendDAOImpl();
+	}
+	
+	public static IAreaTop3ProductDAO1 getIAreaTop3ProductDAO1() {
+		return new AreaTop3ProductDAOImpl1();
 	}
 	
 }
