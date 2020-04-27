@@ -78,6 +78,8 @@ public class AreaTop3ProductSpark {
 			// 2:上海
 			// 结果聚合一行:  1:北京,2:上海,3:深圳
 		sqlContext.udf().register("group_concat_distinct",  new GroupConcatDistinctUDAF());
+		
+		sqlContext.udf().register("get_json_object",  new GetJsonObjectUDF(), DataTypes.StringType);
 		// 生成数据
 		SparkUtils.mockData(sc, sqlContext);
 		
@@ -125,8 +127,38 @@ public class AreaTop3ProductSpark {
 		
 		// 生成各区域各商品点击次数的临时表
 		generateTempAreaPrdocutClickCountTable(sqlContext);
+		
+		
+		// 5、join商品明细表，hive（product_id、product_name、extend_info），extend_info是json类型，自定义UDF，get_json_object()函数，取出其中的product_status字段，if()函数（Spark SQL内置函数），判断，0 自营，1 第三方；（area、product_id、city_names、click_count、product_name、product_status）
+		// 生成包含完整商品信息的各区域各商品点击次数的临时表
+		generateTempAreaFullProductClickCountTable(sqlContext);  
 		sc.close();
 	}
+	/**生成包含完整商品信息的各区域各商品点击次数的临时表
+	 * @param sqlContext
+	 */
+	public static void generateTempAreaFullProductClickCountTable(SQLContext sqlContext) {
+		String sql = "select "
+					+ "tapcc.area, "
+					+ "tapcc.product_id, "
+					+ "tapcc.click_count, "
+					+ "tapcc.city_infos, "
+					+ "pi.product_name, "
+					+ "if(get_json_object(pi.extend_info, 'product_status')='0', '自营' , '第三方')  product_status "
+				+ "from tmp_area_product_click_count tapcc "
+				+ "join product_info pi on tapcc.product_id = pi.product_id ";
+		
+
+		DataFrame df = sqlContext.sql(sql);
+		
+		df.show();
+		System.out.println("tmp_area_fullprod_click_count:" + df.count());
+		
+		df.registerTempTable("tmp_area_fullprod_click_count");
+	}
+	/**生成各区域各商品点击次数的临时表
+	 * @param sqlContext
+	 */
 	public static void generateTempAreaPrdocutClickCountTable(SQLContext sqlContext) {
 		String sql = "select "
 						+ "area, "
@@ -142,8 +174,8 @@ public class AreaTop3ProductSpark {
 //			+ "from tmp_click_product_basic ";
 		DataFrame df = sqlContext.sql(sql);
 		df.show(1000);
-		System.out.println("tmp_area_fullprod_click_count:" + df.count());
-		df.registerTempTable("tmp_area_fullprod_click_count");
+		System.out.println("tmp_area_product_click_count:" + df.count());
+		df.registerTempTable("tmp_area_product_click_count");
 		
 	}
 	/**生成点击商品基础信息临时表
