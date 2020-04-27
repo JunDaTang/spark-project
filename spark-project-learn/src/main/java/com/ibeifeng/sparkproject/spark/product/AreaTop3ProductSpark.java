@@ -132,8 +132,43 @@ public class AreaTop3ProductSpark {
 		// 5、join商品明细表，hive（product_id、product_name、extend_info），extend_info是json类型，自定义UDF，get_json_object()函数，取出其中的product_status字段，if()函数（Spark SQL内置函数），判断，0 自营，1 第三方；（area、product_id、city_names、click_count、product_name、product_status）
 		// 生成包含完整商品信息的各区域各商品点击次数的临时表
 		generateTempAreaFullProductClickCountTable(sqlContext);  
+		
+		
+		// 6、开窗函数，根据area来聚合，获取每个area下，click_count排名前3的product信息；area、area_level、product_id、city_names、click_count、product_name、product_status
+		// 使用开窗函数获取各个区域内点击次数排名前3的热门商品
+		JavaRDD<Row> areaTop3ProductRDD = getAreaTop3ProductRDD(sqlContext);
+		System.out.println("areaTop3ProductRDD:" + areaTop3ProductRDD.count());
+		
 		sc.close();
 	}
+	
+	/**使用开窗函数获取各个区域内点击次数排名前3的热门商品
+	 * @param sqlContext
+	 */
+	public static JavaRDD<Row> getAreaTop3ProductRDD(SQLContext sqlContext) {
+		String sql = "select "
+						+ "area, "
+						+ "product_id, "
+						+ "click_count, "
+						+ "city_infos, "
+						+ "product_name, "
+						+ "product_status "
+					+ "from (select "
+						+ "area, "
+						+ "product_id, "
+						+ "click_count, "
+						+ "city_infos, "
+						+ "product_name, "
+						+ "product_status, "
+						+ "row_number() OVER (PARTITION BY area order by click_count desc) rank "
+						+ "from tmp_area_fullprod_click_count) t "
+					+ "where rank <= 3";
+	
+		DataFrame df = sqlContext.sql(sql);
+		df.show();
+		return df.javaRDD();
+	}
+	
 	/**生成包含完整商品信息的各区域各商品点击次数的临时表
 	 * @param sqlContext
 	 */
@@ -151,8 +186,8 @@ public class AreaTop3ProductSpark {
 
 		DataFrame df = sqlContext.sql(sql);
 		
-		df.show();
-		System.out.println("tmp_area_fullprod_click_count:" + df.count());
+//		df.show();
+//		System.out.println("tmp_area_fullprod_click_count:" + df.count());
 		
 		df.registerTempTable("tmp_area_fullprod_click_count");
 	}
@@ -173,7 +208,7 @@ public class AreaTop3ProductSpark {
 //				+ "concat_long_string(city_id, city_name, ':')  city_info "
 //			+ "from tmp_click_product_basic ";
 		DataFrame df = sqlContext.sql(sql);
-		df.show(1000);
+//		df.show(1000);
 		System.out.println("tmp_area_product_click_count:" + df.count());
 		df.registerTempTable("tmp_area_product_click_count");
 		
