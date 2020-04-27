@@ -146,8 +146,31 @@ public class AreaTop3ProductSpark {
 	 * @param sqlContext
 	 */
 	public static JavaRDD<Row> getAreaTop3ProductRDD(SQLContext sqlContext) {
+		
+		// 技术点：开窗函数
+		
+				// 使用开窗函数先进行一个子查询
+				// 按照area进行分组，给每个分组内的数据，按照点击次数降序排序，打上一个组内的行号
+				// 接着在外层查询中，过滤出各个组内的行号排名前3的数据
+				// 其实就是咱们的各个区域下top3热门商品
+				
+				// 华北、华东、华南、华中、西北、西南、东北
+				// A级：华北、华东
+				// B级：华南、华中
+				// C级：西北、西南
+				// D级：东北
+				
+				// case when
+				// 根据多个条件，不同的条件对应不同的值
+				// case when then ... when then ... else ... end
 		String sql = "select "
 						+ "area, "
+						+ "case area "
+							+ "when  area = '华北'  or area = '华东'  then 'A级'  "
+							+ "when  area = '华南'  or area = '华中'  then 'B级'  "
+							+ "when  area = '西北'  or area = '西南'  then 'C级'  "
+							+ "else 'D级'  "
+						+ "end area_level, "
 						+ "product_id, "
 						+ "click_count, "
 						+ "city_infos, "
