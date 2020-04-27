@@ -18,6 +18,7 @@ import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SQLContext;
+import org.apache.spark.sql.api.java.UDF1;
 import org.apache.spark.sql.api.java.UDF3;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
@@ -54,7 +55,8 @@ public class AreaTop3ProductSpark {
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		SQLContext sqlContext = SparkUtils.getSQLContext(sc.sc());
 		
-		// 定义udf自定义函数:concat_long_string：返回结果，例：“1,北京”
+		// 自定义udf函数：1 to 1
+		// concat_long_string：例：1和"北京" 拼接 “1:北京”
 		sqlContext.udf().register("concat_long_string", new UDF3<Long, String, String, String>(){
 			private static final long serialVersionUID = 1L;
 
@@ -64,12 +66,24 @@ public class AreaTop3ProductSpark {
 				return cityId.toString() + split + cityName;
 			}
 		}, DataTypes.StringType);
+		
+		 // 自定义udaf聚合函数：N to 1,  根据group by area,product_id得到有两组数据如下：
+			// 组1
+			// 1:北京
+			// 1:北京
+			// 2:上海
+			// 组2
+			// 3:深圳
+			// 1:北京
+			// 2:上海
+			// 结果聚合一行:  1:北京,2:上海,3:深圳
+		sqlContext.udf().register("group_concat_distinct",  new GroupConcatDistinctUDAF());
 		// 生成数据
 		SparkUtils.mockData(sc, sqlContext);
 		
 		//1、查询task，获取日期范围，通过Spark SQL，查询user_visit_action表中的指定日期范围内的数据，过滤出，商品点击行为，click_product_id is not null；click_product_id != 'NULL'；click_product_id != 'null'；city_id，click_product_id
 		
-		// 获取taskid,查询task，获取日期范围
+		// 获取taskid,查询task，获取日期范围，（ps: 产生数据是今天的，记得task参数中时间范围要包括进去）
 		Long taskid = ParamUtils.getTaskIdFromArgs(args, Constants.SPARK_LOCAL_TASKID_PRODUCT);
 		ITaskDAO taskDAO = DAOFactory.getTaskDAO();
 		Task task = taskDAO.findById(taskid);
@@ -108,9 +122,30 @@ public class AreaTop3ProductSpark {
 		// 两个函数
 		// UDF：concat2()，将两个字段拼接起来，用指定的分隔符
 		// UDAF：group_concat_distinct()，将一个分组中的多个字段值，用逗号拼接起来，同时进行去重
+		
+		// 生成各区域各商品点击次数的临时表
+		generateTempAreaPrdocutClickCountTable(sqlContext);
 		sc.close();
 	}
-	
+	public static void generateTempAreaPrdocutClickCountTable(SQLContext sqlContext) {
+		String sql = "select "
+						+ "area, "
+						+ "product_id, "
+						+ "count(*)  click_count, "
+						+ "group_concat_distinct(concat_long_string(city_id, city_name, ':'))  city_infos "
+					+ "from tmp_click_product_basic "
+					+ "GROUP BY area,product_id ";
+//		String sql = "select "
+//				+ "area, "
+//				+ "product_id, "
+//				+ "concat_long_string(city_id, city_name, ':')  city_info "
+//			+ "from tmp_click_product_basic ";
+		DataFrame df = sqlContext.sql(sql);
+		df.show(1000);
+		System.out.println("tmp_area_fullprod_click_count:" + df.count());
+		df.registerTempTable("tmp_area_fullprod_click_count");
+		
+	}
 	/**生成点击商品基础信息临时表
 	 * @param sqlContext
 	 * @param cityid2clickActionRDD 商品点击行为
