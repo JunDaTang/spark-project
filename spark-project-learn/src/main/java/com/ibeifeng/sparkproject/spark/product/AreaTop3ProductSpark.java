@@ -56,6 +56,8 @@ public class AreaTop3ProductSpark {
 		SparkUtils.setMaster(conf);
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		SQLContext sqlContext = SparkUtils.getSQLContext(sc.sc());
+//		sqlContext.setConf("spark.sql.shuffle.partitions", "1000"); 
+//		sqlContext.setConf("spark.sql.autoBroadcastJoinThreshold", "20971520");
 		
 		// 自定义udf函数：1 to 1
 		// concat_long_string：例：1和"北京" 拼接 “1:北京”
@@ -82,6 +84,15 @@ public class AreaTop3ProductSpark {
 		sqlContext.udf().register("group_concat_distinct",  new GroupConcatDistinctUDAF());
 		
 		sqlContext.udf().register("get_json_object",  new GetJsonObjectUDF(), DataTypes.StringType);
+		
+		
+		sqlContext.udf().register("random_prefix", 
+				new RandomPrefixUDF(), DataTypes.StringType);
+		sqlContext.udf().register("remove_random_prefix", 
+				new RemoveRandomPrefixUDF(), DataTypes.StringType);
+		
+		
+		
 		// 生成数据
 		SparkUtils.mockData(sc, sqlContext);
 		
@@ -241,6 +252,58 @@ public class AreaTop3ProductSpark {
 
 		DataFrame df = sqlContext.sql(sql);
 		
+		
+//		JavaRDD<Row> rdd = sqlContext.sql("select * from product_info").javaRDD();
+//		JavaRDD<Row> flattedRDD = rdd.flatMap(new FlatMapFunction<Row, Row>() {
+//
+//			private static final long serialVersionUID = 1L;
+//
+//			@Override
+//			public Iterable<Row> call(Row row) throws Exception {
+//				List<Row> list = new ArrayList<Row>();
+//				
+//				for(int i = 0; i < 10; i ++) {
+//					long productid = row.getLong(0);
+//					String _productid = i + "_" + productid;
+//					
+//					Row _row = RowFactory.create(_productid, row.get(1), row.get(2));
+//					list.add(_row);
+//				}
+//				
+//				return list;
+//			}
+//			
+//		});
+//		
+//		StructType _schema = DataTypes.createStructType(Arrays.asList(
+//				DataTypes.createStructField("product_id", DataTypes.StringType, true),
+//				DataTypes.createStructField("product_name", DataTypes.StringType, true),
+//				DataTypes.createStructField("product_status", DataTypes.StringType, true)));
+//		
+//		DataFrame _df = sqlContext.createDataFrame(flattedRDD, _schema);
+//		_df.registerTempTable("tmp_product_info");  
+//		
+//		String _sql = 
+//				"SELECT "
+//					+ "tapcc.area,"
+//					+ "remove_random_prefix(tapcc.product_id) product_id," 
+//					+ "tapcc.click_count,"
+//					+ "tapcc.city_infos,"
+//					+ "pi.product_name,"
+//					+ "if(get_json_object(pi.extend_info,'product_status')=0,'自营商品','第三方商品') product_status "
+//				+ "FROM ("
+//					+ "SELECT "
+//						+ "area,"
+//						+ "random_prefix(product_id, 10) product_id,"
+//						+ "click_count,"
+//						+ "city_infos "
+//					+ "FROM tmp_area_product_click_count "
+//				+ ") tapcc "
+//				+ "JOIN tmp_product_info pi ON tapcc.product_id=pi.product_id ";
+		
+		
+		
+		
 //		df.show();
 //		System.out.println("tmp_area_fullprod_click_count:" + df.count());
 		
@@ -262,6 +325,39 @@ public class AreaTop3ProductSpark {
 //				+ "product_id, "
 //				+ "concat_long_string(city_id, city_name, ':')  city_info "
 //			+ "from tmp_click_product_basic ";
+		/**
+		 * 双重group by
+		 */
+//		String _sql = 
+//		"SELECT "
+//			+ "product_id_area,"
+//			+ "count(click_count) click_count,"
+//			+ "group_concat_distinct(city_infos) city_infos "
+//		+ "FROM ( "
+//			+ "SELECT "
+//				+ "remove_random_prefix(product_id_area) product_id_area,"
+//				+ "click_count,"
+//				+ "city_infos "
+//			+ "FROM ( "
+//				+ "SELECT "
+//					+ "product_id_area,"
+//					+ "count(*) click_count,"
+//					+ "group_concat_distinct(concat_long_string(city_id,city_name,':')) city_infos " 
+//				+ "FROM ( "
+//					+ "SELECT "  
+//						+ "random_prefix(concat_long_string(product_id,area,':'), 10) product_id_area,"
+//						+ "city_id,"
+//						+ "city_name "
+//					+ "FROM tmp_click_product_basic "
+//				+ ") t1 "
+//				+ "GROUP BY product_id_area "
+//			+ ") t2 "  
+//		+ ") t3 "
+//		+ "GROUP BY product_id_area ";  
+
+		
+		
+		
 		DataFrame df = sqlContext.sql(sql);
 //		df.show(1000);
 		System.out.println("tmp_area_product_click_count:" + df.count());
