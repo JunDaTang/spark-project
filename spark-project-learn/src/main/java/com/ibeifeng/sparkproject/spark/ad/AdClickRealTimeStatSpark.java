@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -13,6 +14,7 @@ import org.apache.commons.httpclient.util.DateUtil;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFunction;
@@ -24,10 +26,13 @@ import org.apache.spark.streaming.api.java.JavaPairInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 
+import com.google.common.base.Optional;
 import com.ibeifeng.sparkproject.dao.IAdBlacklistDAO;
+import com.ibeifeng.sparkproject.dao.IAdStatDAO;
 import com.ibeifeng.sparkproject.dao.IAdUserClickCountDAO;
 import com.ibeifeng.sparkproject.dao.factory.DAOFactory;
 import com.ibeifeng.sparkproject.domain.AdBlacklist;
+import com.ibeifeng.sparkproject.domain.AdStat;
 import com.ibeifeng.sparkproject.domain.AdUserClickCount;
 import com.ibeifeng.sparkproject.util.DateUtils;
 import com.ibeifeng.sparkproject.util.SparkUtils;
@@ -81,10 +86,116 @@ public class AdClickRealTimeStatSpark {
 		// 1、实现实时的动态黑名单机制：将每天对某个广告点击超过100次的用户拉黑
 		addBlackList(adRealTimeLogDStream);
 		
+		// 2、基于黑名单的非法广告点击流量过滤机制：
+		JavaPairDStream<String,String> filteredAdRealTimeLogDStream = filterByBlacklist(adRealTimeLogDStream);
 		
-		JavaPairRDD<String, Long> filteredRDD = filterByBlacklist(adRealTimeLogDStream);
+		//3、每天各省各城市各广告的点击流量实时统计：返回结果<yyyyMMdd_province_city_userid, clickCount>
+		JavaPairDStream<String, Long> calculateRealTimeStatDStream = calculateRealTimeStat(filteredAdRealTimeLogDStream);
 	}
 	
+	/**每天各省各城市各广告的点击流量实时统计
+	 * @param filteredAdRealTimeLogDStream
+	 * @return
+	 */
+	public static JavaPairDStream<String, Long> calculateRealTimeStat(
+			JavaPairDStream<String, String> filteredAdRealTimeLogDStream) {
+		
+		//将原数据处理成每天各省各城市各广告格式：<yyyyMMdd_province_city_userid_adid, 1>
+		JavaPairDStream<String, Long> dailyUserAdClickDStream = filteredAdRealTimeLogDStream.mapToPair(new PairFunction<Tuple2<String,String>, String, Long>() {
+
+			@Override
+			public Tuple2<String, Long> call(Tuple2<String, String> tuple) throws Exception {
+				// 一条一条的实时日志
+				// timestamp province city userid adid
+				// 某个时间点 某个省份 某个城市 某个用户 某个广告
+
+				// 从tuple中获取log
+				String log = tuple._2;
+				// 从log中提取出信息，并把时间转换处理下(yyyyMMDD)
+				String[] logSplitted = log.split(" ");
+				String timestamp = logSplitted[0];
+				Date date = new Date(Long.valueOf(timestamp));
+				
+				
+				String datekey = DateUtils.formatDateKey(date);
+				String province = logSplitted[1];
+				String city = logSplitted[2];
+				Long userid = Long.valueOf(logSplitted[3]);
+				Long adid = Long.valueOf(logSplitted[4]);
+				
+				// 拼接key
+				String key = datekey + "_" + province + "_" + city + "_" + userid + "_" + adid;
+				return new Tuple2<String, Long>(key,  1L);
+			}
+			
+			
+		});
+		// 计算全局的<yyyyMMdd_province_city_userid_adid, clickCount>
+		// 在这个dstream中，就相当于，有每个batch rdd累加的各个key（各天各省份各城市各广告的点击次数）
+		// 每次计算出最新的值，就在aggregatedDStream中的每个batch rdd中反应出来
+		// jed:此处不能直接用reduceByKey 如果用只是在每5秒的stream中每个rdd里进行reduce而已，没有全局累加保存
+		JavaPairDStream<String,Long> aggregatedDStream = dailyUserAdClickDStream.updateStateByKey(new Function2<List<Long>, Optional<Long>, Optional<Long>>() {
+
+			@Override
+			public Optional<Long> call(List<Long> values , Optional<Long> optional) throws Exception {
+				Long clickCount = 0L;
+				if(optional.isPresent()) {
+					clickCount = optional.get();
+				}
+				for(Long v : values) {
+					clickCount += v;
+				}
+				return Optional.of(clickCount);
+			}
+		});
+		
+		// 同步一份到mysql
+		aggregatedDStream.foreachRDD(new Function<JavaPairRDD<String,Long>, Void>() {
+
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Void call(JavaPairRDD<String, Long> rdd) throws Exception {
+				rdd.foreachPartition(new VoidFunction<Iterator<Tuple2<String,Long>>>() {
+					
+					@Override
+					public void call(Iterator<Tuple2<String, Long>> iterator) throws Exception {
+						ArrayList<AdStat> adStats = new ArrayList<AdStat>();
+						while(iterator.hasNext()) {
+							Tuple2<String,Long> tuple = iterator.next();
+							// 解析数据
+							// tuple:<yyyyMMdd_province_city_userid_adid, clickCount>
+							String[] splitted = tuple._1.split("_");
+							
+							String date = String.valueOf(DateUtil.parseDate(splitted[0]));
+							String province = splitted[1];
+							String city = splitted[2];
+							Long userid  = Long.valueOf(String.valueOf(splitted[3]));
+							Long adid = Long.valueOf(String.valueOf(splitted[4]));
+							Long clickCount = Long.valueOf(String.valueOf(tuple._2));
+							
+							// 加载进实体类
+							AdStat adStat = new AdStat();
+							adStat.setDate(date);
+							adStat.setProvince(province);
+							adStat.setCity(city);
+							adStat.setAdid(userid);
+							adStat.setAdid(adid);
+							adStat.setClickCount(clickCount);
+							adStats.add(adStat);
+						}
+						
+						//写入mysql
+						IAdStatDAO adStatDAO = DAOFactory.getAdStatDAO();
+						adStatDAO.updateBatch(adStats);
+					}
+				});
+				return null;
+			}
+		});
+		return aggregatedDStream;
+	}
+
 	/**实现实时的动态黑名单机制：将每天对某个广告点击超过100次的用户拉黑
 	 * @param adRealTimeLogDStream
 	 * @return 
@@ -283,10 +394,84 @@ public class AdClickRealTimeStatSpark {
 	
 	
 	
-	public static JavaPairRDD<String, Long> filterByBlacklist(JavaPairInputDStream<String, String> adRealTimeLogDStream){
-
+	/**2、基于黑名单的非法广告点击流量过滤机制：
+	 * 实现：
+	 * // 获取黑名单userid，将转化为<userid, true>
+		// 将adRealTimeLogDStream从<原始数据>转化为<userid, 原始数据>
+		// 将<userid, 原始数据> left join <userid, true>得到<userid, (原始数据, true)>与<userid, (原始数据, null)>
+		// 将<userid, (原始数据, true)> filter 过滤掉黑名单userid， 得到<userid, (原始数据, null)> 
+		// 将<userid, (原始数据, null)> 转化为过滤后的<原始数据>
+	 * @param adRealTimeLogDStream 原始数据
+	 * @return 过滤后的数据
+	 */
+	public static JavaPairDStream<String, String> filterByBlacklist(JavaPairInputDStream<String, String> adRealTimeLogDStream){
 		
-		return null;
+		JavaPairDStream<String, String> filteredAdRealTimeLogDStream = adRealTimeLogDStream.transformToPair(new Function<JavaPairRDD<String,String>, JavaPairRDD<String,String>>() {
+
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public JavaPairRDD<String, String> call(JavaPairRDD<String, String> rdd) throws Exception {
+				// 获取黑名单userid，将转化为<userid, true>
+				IAdBlacklistDAO adBlacklistDAO = DAOFactory.getAdBlacklistDAO();
+				List<AdBlacklist> adBlacklists = adBlacklistDAO.findAll();
+				List<Tuple2<Long, Boolean>> tuples = new ArrayList<Tuple2<Long, Boolean>>();
+				
+				for(AdBlacklist adBlacklist : adBlacklists) {
+					tuples.add(new Tuple2<Long, Boolean>(adBlacklist.getUserid(), true));
+				}
+				
+				JavaSparkContext jsc = new JavaSparkContext(rdd.context());
+				JavaPairRDD<Long, Boolean> adBlacklistRDD = jsc.parallelizePairs(tuples);
+				
+				// 将adRealTimeLogDStream从<原始数据>转化为<userid, 原始数据>
+				JavaPairRDD<Long, Tuple2<String, String>> mapedRDD = rdd.mapToPair(new PairFunction<Tuple2<String,String>, Long, Tuple2<String,String>>() {
+
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public Tuple2<Long, Tuple2<String, String>> call(Tuple2<String, String> tuple) throws Exception {
+						// 从tuple中获取log
+						String log = tuple._2;
+						String[] logSplitted = log.split(" ");
+						Long userid = Long.valueOf(logSplitted[3]);
+						return new Tuple2<Long, Tuple2<String,String>>(userid, tuple);
+					}
+				});
+				// 将<userid, 原始数据> left join <userid, true>得到<userid, (原始数据, true)>与<userid, (原始数据, null)>
+				JavaPairRDD<Long, Tuple2<Tuple2<String, String>, Optional<Boolean>>> joinedRDD = mapedRDD.leftOuterJoin(adBlacklistRDD);
+				
+				// 将<userid, (原始数据, true)> filter 过滤掉黑名单userid， 得到<userid, (原始数据, null)> 
+				JavaPairRDD<Long, Tuple2<Tuple2<String, String>, Optional<Boolean>>> filteredRDD = joinedRDD.filter(new Function<Tuple2<Long,Tuple2<Tuple2<String,String>,Optional<Boolean>>>, Boolean>() {
+
+					private static final long serialVersionUID = 1L;
+					
+					@Override
+					public Boolean call(Tuple2<Long, Tuple2<Tuple2<String, String>, Optional<Boolean>>> tuple) throws Exception {
+						Optional<Boolean> optional = tuple._2._2;
+						if(optional.isPresent() && optional.get()){
+							return false;
+						}
+						return true;
+					}
+				});
+				// 将<userid, (原始数据, null)> 转化为过滤后的<原始数据>
+				JavaPairRDD<String, String> resultRDD = filteredRDD.mapToPair(new PairFunction<Tuple2<Long,Tuple2<Tuple2<String,String>,Optional<Boolean>>>, String, String>() {
+
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public Tuple2<String, String> call(
+							Tuple2<Long, Tuple2<Tuple2<String, String>, Optional<Boolean>>> tuple) throws Exception {
+						
+						return tuple._2._1;
+					}
+				});
+				return resultRDD;
+			}
+		});
+		
+		return filteredAdRealTimeLogDStream;
 	}
 	
 	
