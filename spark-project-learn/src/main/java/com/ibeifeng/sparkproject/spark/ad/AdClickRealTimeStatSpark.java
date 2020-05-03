@@ -31,9 +31,12 @@ import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaPairInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
+import org.apache.spark.streaming.api.java.JavaStreamingContextFactory;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 
 import com.google.common.base.Optional;
+import com.ibeifeng.sparkproject.conf.ConfigurationManager;
+import com.ibeifeng.sparkproject.constant.Constants;
 import com.ibeifeng.sparkproject.dao.IAdBlacklistDAO;
 import com.ibeifeng.sparkproject.dao.IAdClickTrendDAO;
 import com.ibeifeng.sparkproject.dao.IAdProvinceTop3DAO;
@@ -68,11 +71,16 @@ import scala.Tuple2;
 public class AdClickRealTimeStatSpark {
 	public static void main(String[] args) {
 		// init spark streaming
-		SparkConf conf = new SparkConf().setAppName("AdClickRealTimeStatSpark").setMaster("local[2]");
+		SparkConf conf = new SparkConf()
+				.setAppName("AdClickRealTimeStatSpark")
+				.setMaster("local[2]");
+//				.set("spark.streaming.receiver.writeAheadLog.enable", "true");   //  高可用机制2:启动WAL预写日志机制
 //		SparkUtils.setMaster(conf);
 		// 配置5秒
 		JavaStreamingContext jsc = new JavaStreamingContext(conf, Durations.seconds(5));
 		
+		// 高可用机制1:添加checkpoint高可用机制，updateStateByKey、window等有状态的操作，自动进行checkpoint
+		jsc.checkpoint("hdfs://sparkproject1:9000/streaming_checkpoint");
 		// config kafka direct api
 		Map<String, String> kafkaParams = new HashMap<String, String>();
 		kafkaParams.put("metadata.broker.list", "sparkproject1:9092, sparkproject2:9092, sparkproject3:9092");
@@ -113,6 +121,67 @@ public class AdClickRealTimeStatSpark {
 		jsc.start();
 		jsc.awaitTermination();
 		jsc.close();
+	}
+	// 高可用机制2:添加driver高可用机制
+	@SuppressWarnings("unused")
+	private static void testDriverHA() {
+		final String checkpointDir = "hdfs://sparkproject1/streaming_checkpoint";
+		
+		JavaStreamingContextFactory contextFactory = new JavaStreamingContextFactory() {
+			
+			@Override 
+			public JavaStreamingContext create() {
+				SparkConf conf = new SparkConf()
+						.setMaster("local[2]")
+						.setAppName("AdClickRealTimeStatSpark");
+				
+				JavaStreamingContext jssc = new JavaStreamingContext(
+						conf, Durations.seconds(5));  
+				jssc.checkpoint(checkpointDir);
+				
+				Map<String, String> kafkaParams = new HashMap<String, String>();
+				kafkaParams.put(Constants.KAFKA_METADATA_BROKER_LIST, 
+						ConfigurationManager.getProperty(Constants.KAFKA_METADATA_BROKER_LIST));
+				String kafkaTopics = ConfigurationManager.getProperty(Constants.KAFKA_TOPICS);
+				String[] kafkaTopicsSplited = kafkaTopics.split(",");  
+				Set<String> topics = new HashSet<String>();
+				for(String kafkaTopic : kafkaTopicsSplited) {
+					topics.add(kafkaTopic);
+				}
+				
+				JavaPairInputDStream<String, String> adRealTimeLogDStream = KafkaUtils.createDirectStream(
+						jssc, 
+						String.class, 
+						String.class, 
+						StringDecoder.class, 
+						StringDecoder.class, 
+						kafkaParams, 
+						topics);
+				
+				// 1、实现实时的动态黑名单机制：将每天对某个广告点击超过100次的用户拉黑
+				addBlackList(adRealTimeLogDStream);
+				
+				// 2、基于黑名单的非法广告点击流量过滤机制：
+				JavaPairDStream<String,String> filteredAdRealTimeLogDStream = filterByBlacklist(adRealTimeLogDStream);
+				
+				//3、每天各省各城市各广告的点击流量实时统计：返回结果<yyyyMMdd_province_city_userid_adid, clickCount>
+				JavaPairDStream<String, Long> adRealTimeStatDStream = calculateRealTimeStat(filteredAdRealTimeLogDStream);
+				
+				// 4、统计每天各省top3热门广告
+				calculateProvinceTop3Ad(adRealTimeStatDStream);  
+				
+				//5、统计各广告最近1小时内的点击量趋势：各广告最近1小时内各分钟的点击量
+				calculateAdClickCountByWindow(adRealTimeLogDStream);   
+			  
+				return jssc;
+			}
+		  
+		};
+		
+		JavaStreamingContext context = JavaStreamingContext.getOrCreate(
+				checkpointDir, contextFactory);
+		context.start();
+		context.awaitTermination();
 	}
 	
 	/**5、统计各广告最近1小时内的点击量趋势：各广告最近1小时内各分钟的点击量
