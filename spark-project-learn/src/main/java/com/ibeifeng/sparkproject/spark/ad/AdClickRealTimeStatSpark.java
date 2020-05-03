@@ -1,6 +1,7 @@
 package com.ibeifeng.sparkproject.spark.ad;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,6 +20,12 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.RowFactory;
+import org.apache.spark.sql.hive.HiveContext;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
@@ -28,10 +35,12 @@ import org.apache.spark.streaming.kafka.KafkaUtils;
 
 import com.google.common.base.Optional;
 import com.ibeifeng.sparkproject.dao.IAdBlacklistDAO;
+import com.ibeifeng.sparkproject.dao.IAdProvinceTop3DAO;
 import com.ibeifeng.sparkproject.dao.IAdStatDAO;
 import com.ibeifeng.sparkproject.dao.IAdUserClickCountDAO;
 import com.ibeifeng.sparkproject.dao.factory.DAOFactory;
 import com.ibeifeng.sparkproject.domain.AdBlacklist;
+import com.ibeifeng.sparkproject.domain.AdProvinceTop3;
 import com.ibeifeng.sparkproject.domain.AdStat;
 import com.ibeifeng.sparkproject.domain.AdUserClickCount;
 import com.ibeifeng.sparkproject.util.DateUtils;
@@ -89,10 +98,159 @@ public class AdClickRealTimeStatSpark {
 		// 2、基于黑名单的非法广告点击流量过滤机制：
 		JavaPairDStream<String,String> filteredAdRealTimeLogDStream = filterByBlacklist(adRealTimeLogDStream);
 		
-		//3、每天各省各城市各广告的点击流量实时统计：返回结果<yyyyMMdd_province_city_userid, clickCount>
-		JavaPairDStream<String, Long> calculateRealTimeStatDStream = calculateRealTimeStat(filteredAdRealTimeLogDStream);
+		//3、每天各省各城市各广告的点击流量实时统计：返回结果<yyyyMMdd_province_city_userid_adid, clickCount>
+		JavaPairDStream<String, Long> adRealTimeStatDStream = calculateRealTimeStat(filteredAdRealTimeLogDStream);
+		
+		// 4、统计每天各省top3热门广告
+		calculateProvinceTop3Ad(adRealTimeStatDStream);  
 	}
 	
+	/**统计每天各省top3热门广告
+	 * @param adRealTimeStatDStream 每天各省各城市各广告的点击流量实时数据<yyyyMMdd_province_city_userid_adid, clickCount>
+	 */
+	public static void calculateProvinceTop3Ad(JavaPairDStream<String, Long> adRealTimeStatDStream) {
+		JavaDStream<Row> provinceTop3AdDStream = adRealTimeStatDStream.transform(new Function<JavaPairRDD<String,Long>, JavaRDD<Row>>() {
+
+			/**
+			 * 将<yyyyMMdd_province_city_userid_adid, clickCount> 处理转化 成<yyyyMMdd_province_adid, clickCount>，
+			 * 并聚合转化 row，后转成sparksql表，进行开窗top3 sql计算，最后返回结果top3 的row，方便保存到mysql中
+			 */
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public JavaRDD<Row> call(JavaPairRDD<String, Long> rdd) throws Exception {
+				
+				JavaPairRDD<String, Long> mapToPairRDD = rdd.mapToPair(new PairFunction<Tuple2<String,Long>, String, Long>() {
+
+					/**
+					 *  <yyyyMMdd_province_city_userid_adid, clickCount> 转化 <yyyyMMdd_province_adid, clickCount>
+					 */
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public Tuple2<String, Long> call(Tuple2<String, Long> tuple) throws Exception {
+						String[] splitted = tuple._1.split("_");
+						
+						String date = splitted[0];
+						String province = splitted[1];
+						Long adid = Long.valueOf(String.valueOf(splitted[4]));
+						Long clickCount = Long.valueOf(String.valueOf(tuple._2));
+						
+						String key = date + "_" + province + "_"+ adid;
+						return new Tuple2<String, Long>(key, clickCount);
+					}
+				});
+				
+				JavaPairRDD<String, Long> reduceByKeyRDD = mapToPairRDD.reduceByKey(new Function2<Long, Long, Long>() {
+					
+					/**
+					 * 聚合零散<yyyyMMdd_province_adid, clickCount>
+					 */
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public Long call(Long v1, Long v2) throws Exception {
+						// TODO Auto-generated method stub
+						return v1 + v2;
+					}
+				});
+				
+				JavaRDD<Row> rowsRDD = reduceByKeyRDD.map(new Function<Tuple2<String,Long>, Row>() {
+
+					/**
+					 * 聚合后的<yyyyMMdd_province_adid, clickCount>转化为Row(date, province, adid, clickCount)
+					 */
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public Row call(Tuple2<String, Long> tuple) throws Exception {
+						// tuple:<yyyyMMdd_province_adid, clickCount>
+						String[] splitted = tuple._1.split("_");
+						
+						String date = String.valueOf(DateUtil.parseDate(splitted[0]));
+						String province = splitted[1];
+						Long adid = Long.valueOf(String.valueOf(splitted[4]));
+						Long clickCount = Long.valueOf(String.valueOf(tuple._2));
+						//date, province, adid, clickCount
+						return RowFactory.create(date, province, adid, clickCount);
+					}
+				});
+				// 创建sqlspark表
+				StructType schema = DataTypes.createStructType(Arrays.asList(
+						DataTypes.createStructField("date", DataTypes.StringType, true),
+						DataTypes.createStructField("province", DataTypes.StringType, true),
+						DataTypes.createStructField("adid", DataTypes.LongType, true),
+						DataTypes.createStructField("clickCount", DataTypes.LongType, true)
+				));
+				
+				HiveContext sqlContext = new HiveContext(rdd.context());
+				DataFrame dailyAdClickCountByProvinceDF = sqlContext.createDataFrame(rowsRDD, schema);
+				
+				dailyAdClickCountByProvinceDF.registerTempTable("tmp_daily_ad_click_count_by_prov");
+				//用sparksql开窗函数统计top3
+				String sql = 
+						"select  "
+							+ "date, "
+							+ "province, "
+							+ "adid, "
+							+ "clickCount "
+						+ "from "
+							+ "("
+								+ "select "
+									+ "date, "
+									+ "province, "
+									+ "adid, "
+									+ "clickCount, "
+									+ "row_number() over (partition by date,province order by clickCount desc) rank "
+								+ "from tmp_daily_ad_click_count_by_prov"
+							+ ") t "
+						+ "where t.rank <=3 ";
+				DataFrame provinceTop3AdDF = sqlContext.sql(sql);
+				provinceTop3AdDF.show();
+				return provinceTop3AdDF.javaRDD();
+			}
+		});
+		
+		// 同步一份数据到mysql
+		provinceTop3AdDStream.foreachRDD(new Function<JavaRDD<Row>, Void>() {
+			
+			@Override
+			public Void call(JavaRDD<Row> rdd) throws Exception {
+				rdd.foreachPartition(new VoidFunction<Iterator<Row>>() {
+					
+					@Override
+					public void call(Iterator<Row> iterator) throws Exception {
+						
+						ArrayList<AdProvinceTop3> adProvinceTop3s = new ArrayList<AdProvinceTop3>();
+						while(iterator.hasNext()) {
+							// 解析数据
+							Row row = iterator.next();
+							String date = row.getString(0);
+							String province = row.getString(1);
+							Long adid = row.getLong(2);
+							Long clickCount = row.getLong(3);
+							
+							//加载进实体类
+							AdProvinceTop3 adProvinceTop3 = new AdProvinceTop3();
+							adProvinceTop3.setDate(date);
+							adProvinceTop3.setProvince(province);
+							adProvinceTop3.setAdid(adid);
+							adProvinceTop3.setClickCount(clickCount);
+							
+							adProvinceTop3s.add(adProvinceTop3);
+						}
+						
+						IAdProvinceTop3DAO adProvinceTop3DAO = DAOFactory.getAdProvinceTop3DAO();
+						// 更新进mysql
+						adProvinceTop3DAO.updateBatch(adProvinceTop3s);
+						
+					}
+				});
+				return null;
+			}
+		});
+	}
+
 	/**每天各省各城市各广告的点击流量实时统计
 	 * @param filteredAdRealTimeLogDStream
 	 * @return
