@@ -35,11 +35,13 @@ import org.apache.spark.streaming.kafka.KafkaUtils;
 
 import com.google.common.base.Optional;
 import com.ibeifeng.sparkproject.dao.IAdBlacklistDAO;
+import com.ibeifeng.sparkproject.dao.IAdClickTrendDAO;
 import com.ibeifeng.sparkproject.dao.IAdProvinceTop3DAO;
 import com.ibeifeng.sparkproject.dao.IAdStatDAO;
 import com.ibeifeng.sparkproject.dao.IAdUserClickCountDAO;
 import com.ibeifeng.sparkproject.dao.factory.DAOFactory;
 import com.ibeifeng.sparkproject.domain.AdBlacklist;
+import com.ibeifeng.sparkproject.domain.AdClickTrend;
 import com.ibeifeng.sparkproject.domain.AdProvinceTop3;
 import com.ibeifeng.sparkproject.domain.AdStat;
 import com.ibeifeng.sparkproject.domain.AdUserClickCount;
@@ -103,8 +105,108 @@ public class AdClickRealTimeStatSpark {
 		
 		// 4、统计每天各省top3热门广告
 		calculateProvinceTop3Ad(adRealTimeStatDStream);  
+		
+		//5、统计各广告最近1小时内的点击量趋势：各广告最近1小时内各分钟的点击量
+		calculateAdClickCountByWindow(adRealTimeLogDStream);  
+		
+		// 构建完spark streaming上下文之后，记得要进行上下文的启动、等待执行结束、关闭
+		jsc.start();
+		jsc.awaitTermination();
+		jsc.close();
 	}
 	
+	/**5、统计各广告最近1小时内的点击量趋势：各广告最近1小时内各分钟的点击量
+	 * @param adRealTimeLogDStream
+	 */
+	public static void calculateAdClickCountByWindow(JavaPairInputDStream<String, String> adRealTimeLogDStream) {
+		// 先把5分钟流内的所有rdd处理成<yyyyMMddHHmm_adid, 1>
+		// 用移动窗口以10s间隔，聚合出近1小时内<yyyyMMddHHmm_adid, clickCount>, 其实这就是各分钟各广告的点击量
+		// 保存进mysql
+		
+		JavaPairDStream<String, Long> mapToPairDStream = adRealTimeLogDStream.mapToPair(new PairFunction<Tuple2<String,String>, String, Long>() {
+			// 先把5分钟流内的所有rdd处理成<yyyyMMddHHmm_adid, 1>
+
+			@Override
+			public Tuple2<String, Long> call(Tuple2<String, String> tuple) throws Exception {
+				// 从tuple中获取log
+				String log = tuple._2;
+				// 从log中提取出信息，并把时间转换处理下(yyyyMMddHHmm)
+				String[] logSplitted = log.split(" ");
+				String timestamp = logSplitted[0];
+				Date date = new Date(Long.valueOf(timestamp));
+				String datekey = DateUtils.formatTimeMinute(date);
+				Long adid = Long.valueOf(logSplitted[4]);
+				
+				// 拼接key:yyyyMMddHHmm_adid
+				String key = datekey + "_" + adid;
+				return new Tuple2<String, Long>(key,  1L);
+			}
+			
+			
+		});
+		
+		JavaPairDStream<String, Long> reduceByKeyAndWindowDStream = mapToPairDStream.reduceByKeyAndWindow(new Function2<Long, Long, Long>() {
+			
+			/**
+			 * // 用移动窗口以10s间隔，聚合出近1小时内<yyyyMMddHHmm_adid, clickCount>, 其实这就是各分钟各广告的点击量
+			 */
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Long call(Long v1, Long v2) throws Exception {
+				// TODO Auto-generated method stub
+				return v1+v2;
+			}
+		}, Durations.minutes(60), Durations.milliseconds(10));
+		
+		// 保存进mysql
+		reduceByKeyAndWindowDStream.foreachRDD(new Function<JavaPairRDD<String,Long>, Void>() {
+			
+			@Override
+			public Void call(JavaPairRDD<String, Long> rdd) throws Exception {
+				rdd.foreachPartition(new VoidFunction<Iterator<Tuple2<String,Long>>>() {
+					
+					@Override
+					public void call(Iterator<Tuple2<String, Long>> iterator) throws Exception {
+						
+						ArrayList<AdClickTrend> adClickTrends = new ArrayList<AdClickTrend>();
+						while (iterator.hasNext()) {
+							Tuple2<String, Long> tuple = iterator.next();
+							// 解析数据
+							String[] splitted = tuple._1.split("_");
+							//yyyyMMddHHmm
+							String dateMinute = splitted[0];
+							
+							String date = String.valueOf(DateUtils.parseDateKey(dateMinute.substring(0,8)));
+							String hour = dateMinute.substring(8,10);
+							String minute = dateMinute.substring(10);
+							Long adid = Long.valueOf(String.valueOf(splitted[1]));
+							Long clickCount = Long.valueOf(String.valueOf(tuple._2));
+							
+							// 加载进javabean
+							AdClickTrend adClickTrend = new AdClickTrend();
+							adClickTrend.setDate(date);
+							adClickTrend.setHour(hour);
+							adClickTrend.setMinute(minute);
+							adClickTrend.setAdid(adid);
+							adClickTrend.setClickCount(clickCount);
+							
+							
+							
+							adClickTrends.add(adClickTrend);
+						}
+						
+						IAdClickTrendDAO adClickTrendDAO = DAOFactory.getAdClickTrendDAO();
+						// 更新到mysql中
+						adClickTrendDAO.updateBatch(adClickTrends);
+						
+					}
+				});
+				return null;
+			}
+		});
+	}
+
 	/**统计每天各省top3热门广告
 	 * @param adRealTimeStatDStream 每天各省各城市各广告的点击流量实时数据<yyyyMMdd_province_city_userid_adid, clickCount>
 	 */
